@@ -1,0 +1,214 @@
+// Loong 爬虫标准库 v1.0
+// 比Python更简洁、更高效的爬虫API
+
+// ========== 基础爬虫类 ==========
+class Crawler {
+    fn __init__() {
+        self.baseUrl = "";
+        self.headers = {};
+        self.timeout = 30000;
+        self.retryCount = 3;
+    }
+    
+    // 设置baseUrl
+    fn setBaseUrl(url) {
+        self.baseUrl = url;
+    }
+    
+    // 设置请求头
+    fn setHeader(key, value) {
+        self.headers[key] = value;
+    }
+    
+    // 设置User-Agent
+    fn setUserAgent(ua) {
+        self.headers["User-Agent"] = ua;
+    }
+    
+    // 设置超时（毫秒）
+    fn setTimeout(ms) {
+        self.timeout = ms;
+    }
+    
+    // GET请求
+    fn get(url) {
+        val fullUrl = self._buildUrl(url);
+        val resp = http_get(fullUrl, self.headers);
+        return Response(resp);
+    }
+    
+    // POST请求
+    fn post(url, body) {
+        val fullUrl = self._buildUrl(url);
+        val resp = http_post(fullUrl, body, self.headers);
+        return Response(resp);
+    }
+    
+    // 下载文件
+    fn download(url, filepath) {
+        val resp = self.get(url);
+        if resp.success {
+            file_write(filepath, resp.body);
+            return true;
+        }
+        return false;
+    }
+    
+    // 构建完整URL
+    fn _buildUrl(url) {
+        if self.baseUrl == "" {
+            return url;
+        }
+        if startswith(url, "http") {
+            return url;
+        }
+        return self.baseUrl + url;
+    }
+}
+
+// ========== 响应封装类 ==========
+class Response {
+    fn __init__(resp) {
+        self.status = resp["status"];
+        self.body = resp["body"];
+        self.success = resp["success"];
+        self.error = resp["error"];
+        self.headers = resp["headers"];
+    }
+    
+    // 获取JSON（简单解析）
+    fn json() {
+        return self.body;
+    }
+    
+    // 检查状态码
+    fn ok() {
+        return self.status >= 200 and self.status < 300;
+    }
+    
+    // 提取所有链接
+    fn links() {
+        return html_links(self.body);
+    }
+    
+    // 提取所有指定标签
+    fn tags(name) {
+        return html_tag(self.body, name);
+    }
+    
+    // 提取纯文本
+    fn text() {
+        return html_text(self.body);
+    }
+    
+    // 提取指定属性
+    fn attr(tag, attrName) {
+        return html_attr(tag, attrName);
+    }
+    
+    // 查找第一个匹配
+    fn find(tagName) {
+        val results = self.tags(tagName);
+        if len(results) > 0 {
+            return results[0];
+        }
+        return "";
+    }
+    
+    // 查找所有匹配
+    fn findAll(tagName) {
+        return self.tags(tagName);
+    }
+}
+
+// ========== 便捷函数 ==========
+
+// 快速GET请求
+fn fetch(url) {
+    val crawler = Crawler();
+    return crawler.get(url);
+}
+
+// 快速POST请求
+fn post(url, body) {
+    val crawler = Crawler();
+    return crawler.post(url, body);
+}
+
+// 快速下载
+fn download(url, filepath) {
+    val crawler = Crawler();
+    return crawler.download(url, filepath);
+}
+
+// 解析HTML字符串
+fn parse(html) {
+    val resp = {
+        "status": 200,
+        "body": html,
+        "success": true,
+        "error": "",
+        "headers": {}
+    };
+    return Response(resp);
+}
+
+// ========== 批量爬取工具 ==========
+
+class BatchCrawler {
+    fn __init__() {
+        self.urls = [];
+        self.results = [];
+        self.delay = 100;
+    }
+    
+    fn addUrl(url) {
+        push(self.urls, url);
+    }
+    
+    fn setDelay(ms) {
+        self.delay = ms;
+    }
+    
+    fn run() {
+        val crawler = Crawler();
+        self.results = [];
+        
+        for val url in self.urls {
+            val resp = crawler.get(url);
+            push(self.results, resp);
+            if self.delay > 0 {
+                sleep(self.delay);
+            }
+        }
+        
+        return self.results;
+    }
+    
+    fn getResults() {
+        return self.results;
+    }
+}
+
+// ========== URL工具 ==========
+
+fn urlJoin(base, path) {
+    if endswith(base, "/") {
+        if startswith(path, "/") {
+            return base + substr(path, 1);
+        }
+        return base + path;
+    }
+    if startswith(path, "/") {
+        return base + path;
+    }
+    return base + "/" + path;
+}
+
+fn urlEncode(s) {
+    return url_encode(s);
+}
+
+fn urlDecode(s) {
+    return url_decode(s);
+}

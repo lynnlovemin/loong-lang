@@ -1,0 +1,39 @@
+// Loong 标准数学库
+// math.loong
+
+// 数学常量
+val PI = 3.14159265358979;
+val E = 2.71828182845905;
+
+// 幂运算
+fn pow(base, exp) {
+    val result = 1;
+    for val i = 0; i < exp; i = i + 1 {
+        result = result * base;
+    }
+    return result;
+}
+
+// 阶乘
+fn factorial(n) {
+    if n <= 1 {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+// 最大值
+fn max(a, b) {
+    if a > b {
+        return a;
+    }
+    return b;
+}
+
+// 最小值
+fn min(a, b) {
+    if a < b {
+        return a;
+    }
+    return b;
+}

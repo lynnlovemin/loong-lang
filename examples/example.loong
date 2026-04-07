@@ -1,0 +1,527 @@
+// ============================================
+// Loong v1.0.0 完整语法特性示例
+// Loong Language Complete Feature Demo
+// ============================================
+
+// ====================
+// 1. 变量声明
+// ====================
+
+// 基本类型
+val number = 42                    // 整数
+val float_num = 3.14159265358979   // 浮点数
+val big_num = 1234567890123456     // 大数
+val negative = -100                // 负数
+val str_val = "Hello, Loong!"          // 字符串
+val bool_true = true               // 布尔值
+val bool_false = false
+val nothing = nil                  // nil空值
+
+// 列表
+val list = [1, 2, 3, 4, 5]
+val mixed_list = [1, "two", true, nil, [1, 2]]
+
+// 字典
+val dict = {"name": "Loong", "version": 1.0, "active": true}
+val nested_dict = {
+    "user": {"name": "Alice", "age": 25},
+    "tags": ["language", "programming"]
+}
+
+// ====================
+// 2. 数据类型检测
+// ====================
+
+println("=== 数据类型检测 ===")
+println("type(42): ", type(number))
+println("type(3.14): ", type(float_num))
+println("type(str): ", type(str))
+println("type(list): ", type(list))
+println("type(dict): ", type(dict))
+
+println("is_number(42): ", is_number(number))
+println("is_string(str_val): ", is_string(str_val))
+println("is_list(list): ", is_list(list))
+println("is_dict(dict): ", is_dict(dict))
+println("is_null(nothing): ", is_null(nothing))
+println("is_function(print): ", is_function(print))
+
+// ====================
+// 3. 字符串操作
+// ====================
+
+println("\n=== 字符串操作 ===")
+val s = "  Hello, Loong World!  "
+println("原始字符串: '", s, "'")
+println("trim: '", trim(s), "'")
+println("upper: ", upper(s))
+println("lower: ", lower(s))
+println("len: ", len(s))
+println("startswith: ", startswith(s, "  H"))
+println("endswith: ", endswith(s, "!  "))
+println("find: ", find(s, "Loong"))
+println("replace: ", replace(s, "Loong", "Dragon"))
+
+// 字符串分割和连接
+val csv = "apple,banana,orange"
+val parts = split(csv, ",")
+println("split: ", parts)
+println("join: ", join(parts, " | "))
+
+// ====================
+// 4. 数学运算
+// ====================
+
+println("\n=== 数学运算 ===")
+val a = 10
+val b = 3
+println("a = ", a, ", b = ", b)
+println("a + b = ", a + b)
+println("a - b = ", a - b)
+println("a * b = ", a * b)
+println("a / b = ", a / b)
+println("a % b = ", a % b)
+
+// 数学函数
+println("\n--- 数学函数 ---")
+println("abs(-42): ", abs(-42))
+println("sqrt(16): ", sqrt(16))
+println("pow(2, 10): ", pow(2, 10))
+println("floor(3.7): ", floor(3.7))
+println("ceil(3.2): ", ceil(3.2))
+println("round(3.5): ", round(3.5))
+println("PI = ", PI)
+println("E = ", E)
+
+// 随机数
+println("random(): ", random())
+println("random_int(1, 100): ", random_int(1, 100))
+
+// ====================
+// 5. 列表操作
+// ====================
+
+println("\n=== 列表操作 ===")
+val fruits = ["apple", "banana", "orange"]
+println("原始列表: ", fruits)
+
+// 添加元素
+push(fruits, "grape")
+println("push后: ", fruits)
+
+// 弹出元素
+val last = pop(fruits)
+println("pop: ", last, ", 剩余: ", fruits)
+
+// 切片
+val nums = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]
+println("slice([0..9], 2, 7): ", slice(nums, 2, 7))
+
+// 其他操作
+println("first([1,2,3]): ", first([1, 2, 3]))
+println("reverse: ", reverse([1, 2, 3, 4, 5]))
+println("concat: ", concat([1, 2], [3, 4]))
+
+// ====================
+// 6. 字典操作
+// ====================
+
+println("\n=== 字典操作 ===")
+val person = {"name": "Alice", "age": 25}
+println("person: ", person)
+println("person.name: ", person.name)
+println("person.age: ", person.age)
+
+// ====================
+// 7. 条件语句
+// ====================
+
+println("\n=== 条件语句 ===")
+val score = 85
+
+if score >= 90 {
+    println("优秀")
+} else {
+    if score >= 80 {
+        println("良好")
+    } else {
+        if score >= 60 {
+            println("及格")
+        } else {
+            println("不及格")
+        }
+    }
+}
+
+// ====================
+// 8. 循环
+// ====================
+
+println("\n=== 循环 ===")
+
+// 传统 for 循环
+print("for循环: ")
+for val i = 0; i < 5; i = i + 1 {
+    print(i, " ")
+}
+println()
+
+// for-in 循环
+print("for-in循环: ")
+for val item in [10, 20, 30] {
+    print(item, " ")
+}
+println()
+
+// while 循环
+print("while循环: ")
+val count = 0
+while count < 3 {
+    print(count, " ")
+    count = count + 1
+}
+println()
+
+// break 和 continue
+print("break示例: ")
+for val i = 0; i < 10; i = i + 1 {
+    if i == 5 {
+        break
+    }
+    print(i, " ")
+}
+println()
+
+print("continue示例: ")
+for val i = 0; i < 5; i = i + 1 {
+    if i == 2 {
+        continue
+    }
+    print(i, " ")
+}
+println()
+
+// range函数
+println("range(5): ", range(5))
+println("range(2, 7): ", range(2, 7))
+
+// ====================
+// 9. 函数定义
+// ====================
+
+println("\n=== 函数定义 ===")
+
+// 基本函数
+fn greet(name) {
+    return "Hello, " + name + "!"
+}
+println(greet("Loong"))
+
+// 默认参数
+fn power(base, exp = 2) {
+    val result = 1
+    for val i = 0; i < exp; i = i + 1 {
+        result = result * base
+    }
+    return result
+}
+println("power(3): ", power(3))
+println("power(3, 4): ", power(3, 4))
+
+// 递归函数
+fn factorial(n) {
+    if n <= 1 {
+        return 1
+    }
+    return n * factorial(n - 1)
+}
+println("factorial(10): ", factorial(10))
+
+// ====================
+// 10. 类型转换
+// ====================
+
+println("\n=== 类型转换 ===")
+println("str(42): ", str(42))
+println("str(3.14): ", str(3.14))
+println("num('42'): ", num("42"))
+println("int(3.7): ", int(3.7))
+println("bool(1): ", bool(1))
+println("bool(0): ", bool(0))
+
+// ====================
+// 11. 异常处理
+// ====================
+
+println("\n=== 异常处理 ===")
+
+// try-catch
+try {
+    throw "这是一个测试异常"
+} catch (err) {
+    println("捕获异常: ", err)
+}
+
+// try-catch-finally
+val resource = "已打开"
+try {
+    println("处理资源...")
+    throw "处理出错"
+} catch (e) {
+    println("错误: ", e)
+} finally {
+    println("清理资源: ", resource)
+}
+
+// ====================
+// 12. 类和对象
+// ====================
+
+println("\n=== 类和对象 ===")
+
+// 基本类定义
+class Animal {
+    fn __init__(name, age) {
+        self.name = name
+        self.age = age
+    }
+    
+    fn speak() {
+        return "Some sound"
+    }
+    
+    fn info() {
+        return self.name + " (" + str(self.age) + " years old)"
+    }
+}
+
+// 创建对象
+val animal = Animal("Generic", 5)
+println("animal.info(): ", animal.info())
+println("animal.speak(): ", animal.speak())
+
+// 继承
+class Dog : Animal {
+    fn __init__(name, age, breed) {
+        super.__init__(name, age)
+        self.breed = breed
+    }
+    
+    fn speak() {
+        return "Woof!"
+    }
+    
+    fn info() {
+        return super.info() + " - " + self.breed
+    }
+}
+
+val dog = Dog("Buddy", 3, "Golden Retriever")
+println("dog.info(): ", dog.info())
+println("dog.speak(): ", dog.speak())
+
+// 计数器类
+class Counter {
+    fn __init__() {
+        self.count = 0
+    }
+    
+    fn increment() {
+        self.count = self.count + 1
+        return self.count
+    }
+    
+    fn decrement() {
+        self.count = self.count - 1
+        return self.count
+    }
+    
+    fn get() {
+        return self.count
+    }
+}
+
+val counter = Counter()
+println("counter.increment(): ", counter.increment())
+println("counter.increment(): ", counter.increment())
+println("counter.decrement(): ", counter.decrement())
+println("counter.get(): ", counter.get())
+
+// ====================
+// 13. 模块导入
+// ====================
+
+println("\n=== 模块导入 ===")
+
+// 导入标准库
+import math
+
+println("math.PI: ", math.PI)
+println("math.factorial(5): ", math.factorial(5))
+println("math.max(10, 20): ", math.max(10, 20))
+println("math.min(10, 20): ", math.min(10, 20))
+
+// ====================
+// 14. 时间函数
+// ====================
+
+println("\n=== 时间函数 ===")
+println("time_now(): ", time_now())
+println("time_ms(): ", time_ms())
+
+// ====================
+// 15. 文件IO
+// ====================
+
+println("\n=== 文件IO ===")
+
+// 写入文件
+file_write("test_io.txt", "Hello, Loong!\n这是测试文件。")
+println("文件已写入")
+
+// 读取文件
+val content = file_read("test_io.txt")
+println("文件内容: ", content)
+
+// 检查文件存在
+println("file_exists: ", file_exists("test_io.txt"))
+
+// 删除文件
+file_delete("test_io.txt")
+println("文件已删除")
+
+// ====================
+// 16. 综合示例
+// ====================
+
+println("\n=== 综合示例: 简易计算器 ===")
+
+class Calculator {
+    fn __init__() {
+        self.history = []
+    }
+    
+    fn add(a, b) {
+        val result = a + b
+        self.log(str(a) + " + " + str(b) + " = " + str(result))
+        return result
+    }
+    
+    fn subtract(a, b) {
+        val result = a - b
+        self.log(str(a) + " - " + str(b) + " = " + str(result))
+        return result
+    }
+    
+    fn multiply(a, b) {
+        val result = a * b
+        self.log(str(a) + " * " + str(b) + " = " + str(result))
+        return result
+    }
+    
+    fn divide(a, b) {
+        if b == 0 {
+            throw "除数不能为零"
+        }
+        val result = a / b
+        self.log(str(a) + " / " + str(b) + " = " + str(result))
+        return result
+    }
+    
+    fn log(entry) {
+        push(self.history, entry)
+    }
+    
+    fn show_history() {
+        println("计算历史:")
+        for val item in self.history {
+            println("  ", item)
+        }
+    }
+}
+
+val calc = Calculator()
+println("10 + 5 = ", calc.add(10, 5))
+println("10 - 3 = ", calc.subtract(10, 3))
+println("10 * 4 = ", calc.multiply(10, 4))
+println("10 / 2 = ", calc.divide(10, 2))
+calc.show_history()
+
+// 处理除零错误
+try {
+    calc.divide(10, 0)
+} catch (e) {
+    println("错误: ", e)
+}
+
+// ====================
+// 17. 更多列表操作
+// ====================
+
+println("\n=== 更多列表操作 ===")
+
+val arr = [1, 2, 3, 4, 5]
+println("原始数组: ", arr)
+
+// insert - 在指定位置插入
+insert(arr, 2, 99)
+println("insert(arr, 2, 99): ", arr)
+
+// remove_at - 删除指定位置
+remove_at(arr, 2)
+println("remove_at(arr, 2): ", arr)
+
+// ====================
+// 18. 更多字符串操作
+// ====================
+
+println("\n=== 更多字符串操作 ===")
+
+val text = "Hello, Loong!"
+println("substr(text, 0, 5): ", substr(text, 0, 5))
+println("substr(text, 7): ", substr(text, 7))
+
+// ====================
+// 19. HTTP 和 HTML 功能
+// ====================
+
+println("\n=== HTTP 和 HTML 功能 (需要网络) ===")
+
+// HTTP GET 请求
+val http_resp = http_get("http://httpbin.org/get")
+println("HTTP GET 状态码: ", http_resp.status)
+
+// HTML 解析
+val sample_html = "<html><body><h1>Title</h1><a href='link.html'>Link</a></body></html>"
+println("提取链接: ", html_links(sample_html))
+println("提取纯文本: ", html_text(sample_html))
+
+// URL 编解码
+val url_text = "name=张三"
+println("URL编码: ", url_encode(url_text))
+println("URL解码: ", url_decode(url_encode(url_text)))
+
+// ====================
+// 20. 更多内置函数
+// ====================
+
+println("\n=== 更多内置函数 ===")
+
+// input 函数示例（注释掉，需要交互）
+// val name = input("请输入名字: ")
+// println("你好, ", name)
+
+// 大数测试
+val big = 12345678901234567890
+println("大数: ", big)
+println("大数 * 2: ", big * 2)
+
+// 三角函数
+println("sin(0): ", sin(0))
+println("cos(0): ", cos(0))
+println("log(E): ", log(E))
+println("log10(100): ", log10(100))
+
+println("\n========================================")
+println("Loong v1.0.0 所有语法特性演示完成!")
+println("========================================")

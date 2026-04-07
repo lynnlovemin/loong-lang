@@ -1,0 +1,2373 @@
+#include "interpreter.hpp"
+#include "lexer/lexer.hpp"
+#include "parser/parser.hpp"
+#include "utils/error.hpp"
+#include "builtin/http.hpp"
+#include <iostream>
+#include <fstream>
+#include <sstream>
+#include <cmath>
+#include <filesystem>
+#include <cstdlib>
+#include <ctime>
+#include <chrono>
+#include <thread>
+#include <algorithm>
+#include <iomanip>
+
+namespace loong {
+
+// ==================== 大数运算辅助函数 ====================
+
+// 将 LoongValue 转换为 BigInteger
+static BigInteger toBigInteger(const LoongValue& v) {
+    if (v.isBigint()) {
+        return v.bigintValue;
+    } else if (v.isNumber()) {
+        return BigInteger(static_cast<long long>(v.numberValue));
+    }
+    return BigInteger(0);
+}
+
+// 检查是否为数值类型（NUMBER 或 BIGINT）
+static bool isNumeric(const LoongValue& v) {
+    return v.isNumber() || v.isBigint();
+}
+
+// 执行加法运算（支持 NUMBER 和 BIGINT）
+static LoongValue addValues(const LoongValue& left, const LoongValue& right) {
+    // 如果两边都是普通数字且结果不会溢出，使用 double
+    if (left.isNumber() && right.isNumber()) {
+        double result = left.numberValue + right.numberValue;
+        // 检查是否超出安全整数范围
+        if (result >= -9007199254740991.0 && result <= 9007199254740991.0) {
+            return LoongValue::number(result);
+        }
+        // 转换为 BigInteger
+        return LoongValue::bigint(toBigInteger(left) + toBigInteger(right));
+    }
+    // 至少有一个是 BIGINT 或者结果溢出，使用 BigInteger
+    return LoongValue::bigint(toBigInteger(left) + toBigInteger(right));
+}
+
+// 执行减法运算
+static LoongValue subtractValues(const LoongValue& left, const LoongValue& right) {
+    if (left.isNumber() && right.isNumber()) {
+        double result = left.numberValue - right.numberValue;
+        if (result >= -9007199254740991.0 && result <= 9007199254740991.0) {
+            return LoongValue::number(result);
+        }
+        return LoongValue::bigint(toBigInteger(left) - toBigInteger(right));
+    }
+    return LoongValue::bigint(toBigInteger(left) - toBigInteger(right));
+}
+
+// 执行乘法运算
+static LoongValue multiplyValues(const LoongValue& left, const LoongValue& right) {
+    // 如果任一操作数是 BIGINT，使用 BigInteger 运算
+    if (left.isBigint() || right.isBigint()) {
+        return LoongValue::bigint(toBigInteger(left) * toBigInteger(right));
+    }
+    
+    // 两个都是 NUMBER，检查是否会溢出
+    double a = left.numberValue;
+    double b = right.numberValue;
+    
+    // 检查是否会溢出
+    // 使用对数来预测结果的位数
+    if (a != 0 && b != 0) {
+        double logResult = std::log10(std::abs(a)) + std::log10(std::abs(b));
+        // 如果结果可能超过15位有效数字，使用 BigInteger
+        if (logResult > 14) {
+            return LoongValue::bigint(toBigInteger(left) * toBigInteger(right));
+        }
+    }
+    
+    double result = a * b;
+    
+    // 检查结果是否为整数且在安全范围内
+    if (result == std::floor(result) && 
+        result >= -9007199254740991.0 && result <= 9007199254740991.0) {
+        return LoongValue::number(result);
+    }
+    
+    // 如果结果超出安全整数范围，转换为 BigInteger
+    if (result == std::floor(result)) {
+        return LoongValue::bigint(toBigInteger(left) * toBigInteger(right));
+    }
+    
+    // 非整数结果，返回 double
+    return LoongValue::number(result);
+}
+
+// 执行除法运算（总是返回 NUMBER，因为可能是小数）
+static LoongValue divideValues(const LoongValue& left, const LoongValue& right) {
+    if (right.isBigint() && right.bigintValue.isZero()) {
+        throw std::runtime_error("除零错误");
+    }
+    if (right.isNumber() && right.numberValue == 0) {
+        throw std::runtime_error("除零错误");
+    }
+    
+    // 除法可能产生小数，使用浮点数
+    double leftVal = left.isBigint() ? left.bigintValue.toDouble() : left.numberValue;
+    double rightVal = right.isBigint() ? right.bigintValue.toDouble() : right.numberValue;
+    return LoongValue::number(leftVal / rightVal);
+}
+
+// 执行取模运算
+static LoongValue moduloValues(const LoongValue& left, const LoongValue& right) {
+    if ((right.isBigint() && right.bigintValue.isZero()) ||
+        (right.isNumber() && right.numberValue == 0)) {
+        throw std::runtime_error("模零错误");
+    }
+    return LoongValue::bigint(toBigInteger(left) % toBigInteger(right));
+}
+
+// 比较两个值的大小
+static bool compareLess(const LoongValue& left, const LoongValue& right) {
+    if (left.isNumber() && right.isNumber()) {
+        return left.numberValue < right.numberValue;
+    }
+    return toBigInteger(left) < toBigInteger(right);
+}
+
+static bool compareGreater(const LoongValue& left, const LoongValue& right) {
+    if (left.isNumber() && right.isNumber()) {
+        return left.numberValue > right.numberValue;
+    }
+    return toBigInteger(left) > toBigInteger(right);
+}
+
+static bool compareLessEqual(const LoongValue& left, const LoongValue& right) {
+    if (left.isNumber() && right.isNumber()) {
+        return left.numberValue <= right.numberValue;
+    }
+    return toBigInteger(left) <= toBigInteger(right);
+}
+
+static bool compareGreaterEqual(const LoongValue& left, const LoongValue& right) {
+    if (left.isNumber() && right.isNumber()) {
+        return left.numberValue >= right.numberValue;
+    }
+    return toBigInteger(left) >= toBigInteger(right);
+}
+
+// ==================== Interpreter 实现 ====================
+
+Interpreter::Interpreter() {
+    globals_ = std::make_shared<Environment>();
+    environment_ = globals_;
+    registerBuiltinFunctions();
+}
+
+// ==================== 表达式求值 ====================
+
+LoongValue Interpreter::evaluate(ExprPtr expr) {
+    if (!expr) return LoongValue::nil();
+    
+    if (auto e = dynamic_cast<LiteralExpr*>(expr.get())) {
+        return visitLiteralExpr(e);
+    }
+    if (auto e = dynamic_cast<IdentifierExpr*>(expr.get())) {
+        return visitIdentifierExpr(e);
+    }
+    if (auto e = dynamic_cast<BinaryExpr*>(expr.get())) {
+        return visitBinaryExpr(e);
+    }
+    if (auto e = dynamic_cast<UnaryExpr*>(expr.get())) {
+        return visitUnaryExpr(e);
+    }
+    if (auto e = dynamic_cast<GroupedExpr*>(expr.get())) {
+        return visitGroupedExpr(e);
+    }
+    if (auto e = dynamic_cast<ListExpr*>(expr.get())) {
+        return visitListExpr(e);
+    }
+    if (auto e = dynamic_cast<DictExpr*>(expr.get())) {
+        return visitDictExpr(e);
+    }
+    if (auto e = dynamic_cast<IndexExpr*>(expr.get())) {
+        return visitIndexExpr(e);
+    }
+    if (auto e = dynamic_cast<MemberExpr*>(expr.get())) {
+        return visitMemberExpr(e);
+    }
+    if (auto e = dynamic_cast<CallExpr*>(expr.get())) {
+        return visitCallExpr(e);
+    }
+    if (auto e = dynamic_cast<AssignExpr*>(expr.get())) {
+        return visitAssignExpr(e);
+    }
+    if (auto e = dynamic_cast<ThisExpr*>(expr.get())) {
+        return visitThisExpr(e);
+    }
+    if (auto e = dynamic_cast<SuperExpr*>(expr.get())) {
+        return visitSuperExpr(e);
+    }
+
+    return LoongValue::nil();
+}
+
+LoongValue Interpreter::visitLiteralExpr(LiteralExpr* expr) {
+    switch (expr->literalType) {
+        case LiteralExpr::LiteralType::NIL:
+            return LoongValue::nil();
+        case LiteralExpr::LiteralType::BOOL:
+            return LoongValue::boolean(expr->boolValue);
+        case LiteralExpr::LiteralType::NUMBER:
+            return LoongValue::number(expr->numberValue);
+        case LiteralExpr::LiteralType::BIGINT:
+            return LoongValue::bigint(expr->bigintString);
+        case LiteralExpr::LiteralType::STRING:
+            return LoongValue::string(expr->stringValue);
+        default:
+            return LoongValue::nil();
+    }
+}
+
+LoongValue Interpreter::visitIdentifierExpr(IdentifierExpr* expr) {
+    try {
+        return environment_->get(expr->name);
+    } catch (const std::runtime_error& e) {
+        LOONG_NAME_ERROR("未定义的变量: " + expr->name);
+    }
+    return LoongValue::nil();
+}
+
+LoongValue Interpreter::visitBinaryExpr(BinaryExpr* expr) {
+    LoongValue left = evaluate(expr->left);
+    LoongValue right = evaluate(expr->right);
+    
+    switch (expr->op.type) {
+        case TokenType::PLUS:
+            if (isNumeric(left) && isNumeric(right)) {
+                return addValues(left, right);
+            }
+            if (left.isString() || right.isString()) {
+                return LoongValue::string(left.toString() + right.toString());
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行加法运算");
+            break;
+            
+        case TokenType::MINUS:
+            if (isNumeric(left) && isNumeric(right)) {
+                return subtractValues(left, right);
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行减法运算");
+            break;
+            
+        case TokenType::STAR:
+            if (isNumeric(left) && isNumeric(right)) {
+                return multiplyValues(left, right);
+            }
+            if (left.isString() && isNumeric(right)) {
+                return left * right;
+            }
+            if (isNumeric(left) && right.isString()) {
+                return right * left;
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行乘法运算");
+            break;
+            
+        case TokenType::SLASH:
+            if (isNumeric(left) && isNumeric(right)) {
+                try {
+                    return divideValues(left, right);
+                } catch (const std::runtime_error& e) {
+                    LOONG_RUNTIME_ERROR(e.what());
+                }
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行除法运算");
+            break;
+            
+        case TokenType::PERCENT:
+            if (isNumeric(left) && isNumeric(right)) {
+                try {
+                    return moduloValues(left, right);
+                } catch (const std::runtime_error& e) {
+                    LOONG_RUNTIME_ERROR(e.what());
+                }
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行取模运算");
+            break;
+            
+        case TokenType::EQUAL_EQUAL:
+            return LoongValue::boolean(left == right);
+            
+        case TokenType::BANG_EQUAL:
+            return LoongValue::boolean(left != right);
+            
+        case TokenType::LESS:
+            if (isNumeric(left) && isNumeric(right)) {
+                return LoongValue::boolean(compareLess(left, right));
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行比较");
+            break;
+            
+        case TokenType::LESS_EQUAL:
+            if (isNumeric(left) && isNumeric(right)) {
+                return LoongValue::boolean(compareLessEqual(left, right));
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行比较");
+            break;
+            
+        case TokenType::GREATER:
+            if (isNumeric(left) && isNumeric(right)) {
+                return LoongValue::boolean(compareGreater(left, right));
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行比较");
+            break;
+            
+        case TokenType::GREATER_EQUAL:
+            if (isNumeric(left) && isNumeric(right)) {
+                return LoongValue::boolean(compareGreaterEqual(left, right));
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行比较");
+            break;
+            
+        case TokenType::AND:
+            return LoongValue::boolean(left.isTruthy() && right.isTruthy());
+            
+        case TokenType::OR:
+            return LoongValue::boolean(left.isTruthy() || right.isTruthy());
+            
+        default:
+            break;
+    }
+    
+    return LoongValue::nil();
+}
+
+LoongValue Interpreter::visitUnaryExpr(UnaryExpr* expr) {
+    LoongValue right = evaluate(expr->operand);
+    
+    switch (expr->op.type) {
+        case TokenType::MINUS:
+            if (right.isNumber()) {
+                return LoongValue::number(-right.numberValue);
+            }
+            LOONG_TYPE_ERROR("无法对 " + right.typeName() + " 取负");
+            break;
+            
+        case TokenType::NOT:
+            return LoongValue::boolean(!right.isTruthy());
+            
+        default:
+            break;
+    }
+    
+    return LoongValue::nil();
+}
+
+LoongValue Interpreter::visitGroupedExpr(GroupedExpr* expr) {
+    return evaluate(expr->expression);
+}
+
+LoongValue Interpreter::visitListExpr(ListExpr* expr) {
+    std::vector<LoongValue> elements;
+    for (const auto& e : expr->elements) {
+        elements.push_back(evaluate(e));
+    }
+    return LoongValue::list(elements);
+}
+
+LoongValue Interpreter::visitDictExpr(DictExpr* expr) {
+    std::map<std::string, LoongValue> dict;
+    for (const auto& pair : expr->pairs) {
+        LoongValue key = evaluate(pair.first);
+        LoongValue value = evaluate(pair.second);
+        if (!key.isString()) {
+            LOONG_TYPE_ERROR("字典键必须是字符串类型");
+        }
+        dict[key.stringValue] = value;
+    }
+    return LoongValue::dict(dict);
+}
+
+LoongValue Interpreter::visitIndexExpr(IndexExpr* expr) {
+    LoongValue object = evaluate(expr->object);
+    LoongValue index = evaluate(expr->index);
+    
+    if (object.isList()) {
+        if (!index.isNumber()) {
+            LOONG_TYPE_ERROR("列表索引必须是数字");
+        }
+        int idx = static_cast<int>(index.numberValue);
+        if (idx < 0 || idx >= static_cast<int>(object.listValue.size())) {
+            LOONG_INDEX_ERROR("列表索引越界: " + std::to_string(idx));
+        }
+        return object.listValue[idx];
+    }
+    
+    if (object.isDict()) {
+        if (!index.isString()) {
+            LOONG_TYPE_ERROR("字典键必须是字符串");
+        }
+        auto it = object.dictValue.find(index.stringValue);
+        if (it == object.dictValue.end()) {
+            return LoongValue::nil();
+        }
+        return it->second;
+    }
+    
+    if (object.isString()) {
+        if (!index.isNumber()) {
+            LOONG_TYPE_ERROR("字符串索引必须是数字");
+        }
+        int idx = static_cast<int>(index.numberValue);
+        if (idx < 0 || idx >= static_cast<int>(object.stringValue.size())) {
+            LOONG_INDEX_ERROR("字符串索引越界: " + std::to_string(idx));
+        }
+        return LoongValue::string(std::string(1, object.stringValue[idx]));
+    }
+    
+    LOONG_TYPE_ERROR("无法对 " + object.typeName() + " 类型进行索引访问");
+    return LoongValue::nil();
+}
+
+LoongValue Interpreter::visitMemberExpr(MemberExpr* expr) {
+    LoongValue object = evaluate(expr->object);
+    
+    // 字典成员访问
+    if (object.isDict()) {
+        auto it = object.dictValue.find(expr->member);
+        if (it == object.dictValue.end()) {
+            return LoongValue::nil();
+        }
+        return it->second;
+    }
+    
+    // 内置方法
+    if (object.isString()) {
+        if (expr->member == "len") {
+            return LoongValue::number(object.stringValue.length());
+        }
+        if (expr->member == "upper") {
+            std::string upper = object.stringValue;
+            for (char& c : upper) c = std::toupper(c);
+            return LoongValue::string(upper);
+        }
+        if (expr->member == "lower") {
+            std::string lower = object.stringValue;
+            for (char& c : lower) c = std::tolower(c);
+            return LoongValue::string(lower);
+        }
+    }
+    
+    if (object.isList()) {
+        if (expr->member == "len") {
+            return LoongValue::number(object.listValue.size());
+        }
+    }
+    
+    // 实例成员访问
+    if (object.isInstance()) {
+        auto instance = object.instanceValue;
+        auto klass = instance->klass;
+        
+        // 1. 先查找实例属性
+        auto fieldIt = instance->fields.find(expr->member);
+        if (fieldIt != instance->fields.end()) {
+            return fieldIt->second;
+        }
+        
+        // 2. 查找方法
+        auto methodIt = klass->methods.find(expr->member);
+        if (methodIt != klass->methods.end()) {
+            // 返回绑定方法（包含实例引用）
+            auto bm = std::make_shared<BoundMethod>();
+            bm->instance = object;
+            bm->method = methodIt->second.userFunc;
+            return LoongValue::boundMethod(bm);
+        }
+        
+        // 3. 查找父类方法
+        if (!klass->superClass.empty()) {
+            try {
+                LoongValue superVal = environment_->get(klass->superClass);
+                if (superVal.isClass()) {
+                    auto superMethodIt = superVal.classValue->methods.find(expr->member);
+                    if (superMethodIt != superVal.classValue->methods.end()) {
+                        return superMethodIt->second;
+                    }
+                }
+            } catch (...) {
+                // 父类未找到
+            }
+        }
+        
+        return LoongValue::nil();
+    }
+
+    LOONG_TYPE_ERROR(object.typeName() + " 类型没有成员: " + expr->member);
+    return LoongValue::nil();
+}
+
+LoongValue Interpreter::visitCallExpr(CallExpr* expr) {
+    LoongValue callee = evaluate(expr->callee);
+    
+    // 类构造函数调用
+    if (callee.isClass()) {
+        auto klass = callee.classValue;
+        
+        // 创建实例
+        auto instance = std::make_shared<LoongInstance>();
+        instance->klass = klass;
+        
+        std::vector<LoongValue> arguments;
+        for (const auto& arg : expr->arguments) {
+            arguments.push_back(evaluate(arg));
+        }
+        
+        // 查找构造函数
+        auto initIt = klass->methods.find("__init__");
+        if (initIt != klass->methods.end()) {
+            // 执行构造函数
+            auto initFunc = initIt->second.userFunc;
+            
+            if (arguments.size() < initFunc->params.size()) {
+                LOONG_RUNTIME_ERROR("构造函数需要至少 " + 
+                                  std::to_string(initFunc->params.size()) + " 个参数");
+            }
+            
+            // 保存当前实例和类
+            auto previousInstance = currentInstance_;
+            auto previousClass = currentClass_;
+            auto previousSuperClass = currentSuperClass_;
+            
+            currentInstance_ = LoongValue::instance(instance);
+            currentClass_ = klass;
+            
+            // 设置父类
+            if (!klass->superClass.empty()) {
+                try {
+                    LoongValue superVal = environment_->get(klass->superClass);
+                    if (superVal.isClass()) {
+                        currentSuperClass_ = superVal.classValue;
+                    }
+                } catch (...) {
+                    // 父类未找到
+                }
+            }
+            
+            // 创建新环境
+            auto previous = environment_;
+            auto newEnv = initFunc->closure->createChild();
+            environment_ = newEnv;
+            
+            // 绑定参数
+            for (size_t i = 0; i < initFunc->params.size(); i++) {
+                environment_->define(initFunc->params[i], arguments[i]);
+            }
+            
+            // 执行构造函数体
+            try {
+                for (const auto& stmt : initFunc->body) {
+                    execute(stmt);
+                }
+            } catch (const ReturnException&) {
+                // 构造函数的return被忽略
+            }
+            
+            environment_ = previous;
+            currentInstance_ = previousInstance;
+            currentClass_ = previousClass;
+            currentSuperClass_ = previousSuperClass;
+        }
+        
+        return LoongValue::instance(instance);
+    }
+        
+    // 绑定方法调用
+    if (callee.isBoundMethod()) {
+        auto bm = callee.boundMethodValue;
+        auto func = bm->method;
+            
+        std::vector<LoongValue> arguments;
+        for (const auto& arg : expr->arguments) {
+            arguments.push_back(evaluate(arg));
+        }
+            
+        if (arguments.size() < func->params.size()) {
+            LOONG_RUNTIME_ERROR("方法 " + func->name + " 需要至少 " + 
+                              std::to_string(func->params.size()) + " 个参数");
+        }
+            
+        // 保存当前实例和类
+        auto previousInstance = currentInstance_;
+        auto previousClass = currentClass_;
+        auto previousSuperClass = currentSuperClass_;
+            
+        currentInstance_ = bm->instance;
+        if (bm->instance.isInstance()) {
+            currentClass_ = bm->instance.instanceValue->klass;
+            // 设置父类
+            if (!currentClass_->superClass.empty()) {
+                try {
+                    LoongValue superVal = environment_->get(currentClass_->superClass);
+                    if (superVal.isClass()) {
+                        currentSuperClass_ = superVal.classValue;
+                    }
+                } catch (...) {
+                    // 父类未找到
+                }
+            }
+        }
+            
+        // 创建新环境
+        auto previous = environment_;
+        auto newEnv = func->closure->createChild();
+        environment_ = newEnv;
+            
+        // 绑定参数
+        for (size_t i = 0; i < func->params.size(); i++) {
+            environment_->define(func->params[i], arguments[i]);
+        }
+            
+        // 绑定默认参数
+        for (size_t i = 0; i < func->defaultParams.size(); i++) {
+            size_t argIndex = func->params.size() + i;
+            if (argIndex < arguments.size()) {
+                environment_->define(func->defaultParams[i].name, arguments[argIndex]);
+            } else {
+                environment_->define(func->defaultParams[i].name, evaluate(func->defaultParams[i].defaultValue));
+            }
+        }
+            
+        // 执行方法体
+        LoongValue result = LoongValue::nil();
+        try {
+            for (const auto& stmt : func->body) {
+                execute(stmt);
+            }
+        } catch (const ReturnException& ret) {
+            result = ret.value;
+        }
+            
+        environment_ = previous;
+        currentInstance_ = previousInstance;
+        currentClass_ = previousClass;
+        currentSuperClass_ = previousSuperClass;
+            
+        return result;
+    }
+    
+    if (!callee.isFunction()) {
+        LOONG_TYPE_ERROR("只能调用函数");
+    }
+    
+    std::vector<LoongValue> arguments;
+    for (const auto& arg : expr->arguments) {
+        arguments.push_back(evaluate(arg));
+    }
+    
+    // 内置函数
+    if (callee.isBuiltinFunction()) {
+        return callee.builtinFunc(arguments);
+    }
+    
+    // 用户定义函数
+    if (callee.isUserFunction()) {
+        auto func = callee.userFunc;
+        
+        if (arguments.size() < func->params.size()) {
+            LOONG_RUNTIME_ERROR("函数 " + func->name + " 需要至少 " + 
+                              std::to_string(func->params.size()) + " 个参数，但只提供了 " +
+                              std::to_string(arguments.size()) + " 个");
+        }
+        
+        if (arguments.size() > func->params.size() + func->defaultParams.size()) {
+            LOONG_RUNTIME_ERROR("函数 " + func->name + " 最多接受 " + 
+                              std::to_string(func->params.size() + func->defaultParams.size()) + " 个参数");
+        }
+        
+        // 创建新的环境
+        auto previous = environment_;
+        auto newEnv = func->closure->createChild();
+        environment_ = newEnv;
+        
+        // 绑定参数
+        for (size_t i = 0; i < func->params.size(); i++) {
+            environment_->define(func->params[i], arguments[i]);
+        }
+        
+        // 绑定默认参数
+        for (size_t i = 0; i < func->defaultParams.size(); i++) {
+            size_t argIndex = func->params.size() + i;
+            if (argIndex < arguments.size()) {
+                environment_->define(func->defaultParams[i].name, arguments[argIndex]);
+            } else {
+                environment_->define(func->defaultParams[i].name, evaluate(func->defaultParams[i].defaultValue));
+            }
+        }
+        
+        // 执行函数体
+        LoongValue result = LoongValue::nil();
+        try {
+            for (const auto& stmt : func->body) {
+                execute(stmt);
+            }
+        } catch (const ReturnException& ret) {
+            result = ret.value;
+        }
+        
+        environment_ = previous;
+        return result;
+    }
+    
+    return LoongValue::nil();
+}
+
+LoongValue Interpreter::visitAssignExpr(AssignExpr* expr) {
+    LoongValue value = evaluate(expr->value);
+    
+    // 赋值给变量
+    if (auto ident = dynamic_cast<IdentifierExpr*>(expr->target.get())) {
+        if (!environment_->exists(ident->name)) {
+            LOONG_NAME_ERROR("未定义的变量: " + ident->name);
+        }
+        environment_->assign(ident->name, value);
+        return value;
+    }
+    
+    // 赋值给索引
+    if (auto indexExpr = dynamic_cast<IndexExpr*>(expr->target.get())) {
+        LoongValue object = evaluate(indexExpr->object);
+        LoongValue index = evaluate(indexExpr->index);
+        
+        if (object.isList()) {
+            if (!index.isNumber()) {
+                LOONG_TYPE_ERROR("列表索引必须是数字");
+            }
+            int idx = static_cast<int>(index.numberValue);
+            if (idx < 0 || idx >= static_cast<int>(object.listValue.size())) {
+                LOONG_INDEX_ERROR("列表索引越界");
+            }
+            // 需要修改原列表
+            environment_->assign(dynamic_cast<IdentifierExpr*>(indexExpr->object.get())->name, 
+                               LoongValue::list(object.listValue));
+            return value;
+        }
+        
+        if (object.isDict()) {
+            if (!index.isString()) {
+                LOONG_TYPE_ERROR("字典键必须是字符串");
+            }
+            object.dictValue[index.stringValue] = value;
+            return value;
+        }
+        
+        LOONG_TYPE_ERROR("无法对 " + object.typeName() + " 进行索引赋值");
+    }
+    
+    // 赋值给成员（实例属性）
+    if (auto memberExpr = dynamic_cast<MemberExpr*>(expr->target.get())) {
+        LoongValue object = evaluate(memberExpr->object);
+        
+        if (object.isInstance()) {
+            object.instanceValue->fields[memberExpr->member] = value;
+            return value;
+        }
+        
+        LOONG_TYPE_ERROR("无法对 " + object.typeName() + " 进行成员赋值");
+    }
+    
+    LOONG_RUNTIME_ERROR("无效的赋值目标");
+    return LoongValue::nil();
+}
+
+// ==================== 语句执行 ====================
+
+void Interpreter::execute(StmtPtr stmt) {
+    if (!stmt) return;
+    
+    if (auto s = dynamic_cast<ExprStmt*>(stmt.get())) {
+        visitExprStmt(s);
+    } else if (auto s = dynamic_cast<ValStmt*>(stmt.get())) {
+        visitValStmt(s);
+    } else if (auto s = dynamic_cast<FnStmt*>(stmt.get())) {
+        visitFnStmt(s);
+    } else if (auto s = dynamic_cast<ReturnStmt*>(stmt.get())) {
+        visitReturnStmt(s);
+    } else if (auto s = dynamic_cast<IfStmt*>(stmt.get())) {
+        visitIfStmt(s);
+    } else if (auto s = dynamic_cast<WhileStmt*>(stmt.get())) {
+        visitWhileStmt(s);
+    } else if (auto s = dynamic_cast<ForStmt*>(stmt.get())) {
+        visitForStmt(s);
+    } else if (auto s = dynamic_cast<ForInStmt*>(stmt.get())) {
+        visitForInStmt(s);
+    } else if (auto s = dynamic_cast<BreakStmt*>(stmt.get())) {
+        visitBreakStmt(s);
+    } else if (auto s = dynamic_cast<ContinueStmt*>(stmt.get())) {
+        visitContinueStmt(s);
+    } else if (auto s = dynamic_cast<ImportStmt*>(stmt.get())) {
+        visitImportStmt(s);
+    } else if (auto s = dynamic_cast<TryStmt*>(stmt.get())) {
+        visitTryStmt(s);
+    } else if (auto s = dynamic_cast<ThrowStmt*>(stmt.get())) {
+        visitThrowStmt(s);
+    } else if (auto s = dynamic_cast<ClassStmt*>(stmt.get())) {
+        visitClassStmt(s);
+    }
+}
+
+void Interpreter::executeBlock(const std::vector<StmtPtr>& statements,
+                               std::shared_ptr<Environment> environment) {
+    auto previous = environment_;
+    environment_ = environment;
+    
+    try {
+        for (const auto& stmt : statements) {
+            execute(stmt);
+        }
+    } catch (...) {
+        environment_ = previous;
+        throw;
+    }
+    
+    environment_ = previous;
+}
+
+void Interpreter::visitExprStmt(ExprStmt* stmt) {
+    evaluate(stmt->expression);
+}
+
+void Interpreter::visitValStmt(ValStmt* stmt) {
+    LoongValue value = LoongValue::nil();
+    if (stmt->initializer) {
+        value = evaluate(stmt->initializer);
+    }
+    environment_->define(stmt->name, value);
+}
+
+void Interpreter::visitFnStmt(FnStmt* stmt) {
+    auto func = std::make_shared<UserFunction>();
+    func->name = stmt->name;
+    func->params = stmt->params;
+    
+    // 转换默认参数
+    for (const auto& dp : stmt->defaultParams) {
+        func->defaultParams.push_back(DefaultParamInfo(dp.first, dp.second));
+    }
+    
+    func->closure = environment_;
+    func->body = stmt->body;
+    
+    environment_->define(stmt->name, LoongValue::userFunction(func));
+}
+
+void Interpreter::visitReturnStmt(ReturnStmt* stmt) {
+    LoongValue value = LoongValue::nil();
+    if (stmt->value) {
+        value = evaluate(stmt->value);
+    }
+    throw ReturnException(value);
+}
+
+void Interpreter::visitIfStmt(IfStmt* stmt) {
+    if (evaluate(stmt->condition).isTruthy()) {
+        executeBlock(stmt->thenBranch, environment_->createChild());
+    } else if (!stmt->elseBranch.empty()) {
+        executeBlock(stmt->elseBranch, environment_->createChild());
+    }
+}
+
+void Interpreter::visitWhileStmt(WhileStmt* stmt) {
+    while (evaluate(stmt->condition).isTruthy()) {
+        try {
+            executeBlock(stmt->body, environment_->createChild());
+        } catch (const BreakException&) {
+            break;
+        } catch (const ContinueException&) {
+            continue;
+        }
+    }
+}
+
+void Interpreter::visitForStmt(ForStmt* stmt) {
+    // 创建 for 循环环境
+    auto previous = environment_;
+    environment_ = environment_->createChild();
+    
+    // 初始化
+    if (stmt->initializer) {
+        execute(stmt->initializer);
+    }
+    
+    // 循环
+    while (true) {
+        if (stmt->condition) {
+            if (!evaluate(stmt->condition).isTruthy()) {
+                break;
+            }
+        }
+        
+        try {
+            executeBlock(stmt->body, environment_->createChild());
+        } catch (const BreakException&) {
+            break;
+        } catch (const ContinueException&) {
+            // 继续执行 increment
+        }
+        
+        if (stmt->increment) {
+            evaluate(stmt->increment);
+        }
+    }
+    
+    environment_ = previous;
+}
+
+void Interpreter::visitForInStmt(ForInStmt* stmt) {
+    LoongValue iterable = evaluate(stmt->iterable);
+    
+    if (!iterable.isList() && !iterable.isString()) {
+        LOONG_TYPE_ERROR("for-in 循环只能遍历列表或字符串");
+    }
+    
+    if (iterable.isList()) {
+        for (const auto& item : iterable.listValue) {
+            auto loopEnv = environment_->createChild();
+            loopEnv->define(stmt->varName, item);
+            
+            try {
+                executeBlock(stmt->body, loopEnv);
+            } catch (const BreakException&) {
+                break;
+            } catch (const ContinueException&) {
+                continue;
+            }
+        }
+    } else if (iterable.isString()) {
+        for (char c : iterable.stringValue) {
+            auto loopEnv = environment_->createChild();
+            loopEnv->define(stmt->varName, LoongValue::string(std::string(1, c)));
+            
+            try {
+                executeBlock(stmt->body, loopEnv);
+            } catch (const BreakException&) {
+                break;
+            } catch (const ContinueException&) {
+                continue;
+            }
+        }
+    }
+}
+
+void Interpreter::visitBreakStmt(BreakStmt*) {
+    throw BreakException();
+}
+
+void Interpreter::visitContinueStmt(ContinueStmt*) {
+    throw ContinueException();
+}
+
+void Interpreter::visitImportStmt(ImportStmt* stmt) {
+    if (loadedModules_.count(stmt->moduleName)) {
+        return; // 已加载
+    }
+    
+    LoongValue moduleObj = loadModule(stmt->moduleName, stmt->filePath);
+    if (!moduleObj.isNil()) {
+        // 将模块对象注册到当前环境
+        environment_->define(stmt->moduleName, moduleObj);
+        loadedModules_.insert(stmt->moduleName);
+    }
+}
+
+void Interpreter::visitTryStmt(TryStmt* stmt) {
+    bool hasException = false;
+    LoongValue exceptionValue;
+    
+    try {
+        // 执行try块
+        for (const auto& s : stmt->tryBlock) {
+            execute(s);
+        }
+    } catch (const LoongException& e) {
+        hasException = true;
+        exceptionValue = e.value;
+    } catch (const std::runtime_error& e) {
+        // 捕获运行时错误，转换为Loong异常
+        hasException = true;
+        exceptionValue = LoongValue::string(e.what());
+    }
+    
+    // 执行catch块
+    if (hasException && !stmt->catchBlock.empty()) {
+        // 创建新的环境
+        auto catchEnv = std::make_shared<Environment>(environment_);
+        if (!stmt->catchVar.empty()) {
+            catchEnv->define(stmt->catchVar, exceptionValue);
+        }
+        
+        auto previous = environment_;
+        try {
+            environment_ = catchEnv;
+            for (const auto& s : stmt->catchBlock) {
+                execute(s);
+            }
+        } catch (...) {
+            environment_ = previous;
+            throw; // 重新抛出
+        }
+        environment_ = previous;
+    }
+    
+    // 执行finally块
+    if (!stmt->finallyBlock.empty()) {
+        for (const auto& s : stmt->finallyBlock) {
+            execute(s);
+        }
+    }
+    
+    // 如果没有catch块且有异常，重新抛出
+    if (hasException && stmt->catchBlock.empty()) {
+        throw LoongException(exceptionValue);
+    }
+}
+
+void Interpreter::visitThrowStmt(ThrowStmt* stmt) {
+    LoongValue value = evaluate(stmt->value);
+    throw LoongException(value, stmt->line, stmt->column);
+}
+
+void Interpreter::visitClassStmt(ClassStmt* stmt) {
+    // 创建类对象
+    auto klass = std::make_shared<LoongClass>(stmt->name, stmt->superClass);
+    klass->closure = environment_;
+    
+    // 收集方法
+    for (const auto& methodStmt : stmt->body) {
+        if (auto fnStmt = dynamic_cast<FnStmt*>(methodStmt.get())) {
+            auto method = std::make_shared<UserFunction>();
+            method->name = fnStmt->name;
+            method->params = fnStmt->params;
+            // 转换defaultParams
+            for (const auto& dp : fnStmt->defaultParams) {
+                method->defaultParams.push_back(DefaultParamInfo(dp.first, dp.second));
+            }
+            method->body = fnStmt->body;
+            method->closure = environment_;  // 保存定义时的环境
+            
+            LoongValue methodValue = LoongValue::userFunction(method);
+            klass->methods[fnStmt->name] = methodValue;
+        }
+    }
+    
+    // 注册类
+    environment_->define(stmt->name, LoongValue::classVal(klass));
+}
+
+LoongValue Interpreter::visitThisExpr(ThisExpr* expr) {
+    if (currentInstance_.isNil()) {
+        throw std::runtime_error("\'this\' 只能在方法内部使用");
+    }
+    return currentInstance_;
+}
+
+LoongValue Interpreter::visitSuperExpr(SuperExpr* expr) {
+    if (!currentSuperClass_) {
+        throw std::runtime_error("\'super\' 只能在子类方法内使用");
+    }
+    
+    // 查找父类方法
+    auto methodIt = currentSuperClass_->methods.find(expr->method);
+    if (methodIt == currentSuperClass_->methods.end()) {
+        throw std::runtime_error("未定义的方法: " + expr->method);
+    }
+    
+    return methodIt->second;
+}
+
+// 获取父目录
+std::string Interpreter::getParentDirectory(const std::string& path) {
+    size_t pos = path.find_last_of("/\\");
+    if (pos == std::string::npos || pos == 0) {
+        return "";
+    }
+    return path.substr(0, pos);
+}
+
+// 在指定目录中搜索模块
+std::string Interpreter::searchModuleInDirectory(const std::string& dir, const std::string& moduleName) {
+    std::string basePath = dir;
+    if (!basePath.empty() && basePath.back() != '/' && basePath.back() != '\\') {
+        basePath += "/";
+    }
+    
+    // 尝试多种路径组合
+    std::vector<std::string> candidates = {
+        basePath + moduleName + ".loong",           // 模块名.loong
+        basePath + moduleName + "/" + moduleName + ".loong",  // 模块名/模块名.loong
+        basePath + "lib/" + moduleName + ".loong",  // lib/模块名.loong
+        basePath + moduleName + "/main.loong",      // 模块名/main.loong
+    };
+    
+    for (const auto& candidate : candidates) {
+        std::ifstream test(candidate);
+        if (test.is_open()) {
+            test.close();
+            return candidate;
+        }
+    }
+    
+    return "";
+}
+
+// 解析模块路径
+std::string Interpreter::resolveModulePath(const std::string& moduleName, const std::string& filePath) {
+    // 如果指定了明确路径，先尝试解析
+    if (!filePath.empty()) {
+        // 绝对路径直接使用
+        if (filePath.find(':') == 1 || filePath[0] == '/' || filePath[0] == '\\') {
+            std::ifstream test(filePath);
+            if (test.is_open()) {
+                test.close();
+                return filePath;
+            }
+        }
+        
+        // 相对路径：相对于当前源文件所在目录
+        std::string baseDir;
+        if (!importStack_.empty()) {
+            // 从导入栈获取当前文件所在目录
+            baseDir = getParentDirectory(importStack_.back());
+        } else if (!currentSourceFile_.empty()) {
+            baseDir = getParentDirectory(currentSourceFile_);
+        } else {
+            baseDir = currentDirectory_;
+        }
+        
+        std::string fullPath = baseDir;
+        if (!fullPath.empty() && fullPath.back() != '/' && fullPath.back() != '\\') {
+            fullPath += "/";
+        }
+        fullPath += filePath;
+        
+        std::ifstream test(fullPath);
+        if (test.is_open()) {
+            test.close();
+            return fullPath;
+        }
+    }
+    
+    // 自动寻址逻辑
+    std::string searchDir;
+    
+    // 1. 从当前源文件所在目录开始向上查找
+    if (!importStack_.empty()) {
+        searchDir = getParentDirectory(importStack_.back());
+    } else if (!currentSourceFile_.empty()) {
+        searchDir = getParentDirectory(currentSourceFile_);
+    }
+    
+    while (!searchDir.empty()) {
+        std::string found = searchModuleInDirectory(searchDir, moduleName);
+        if (!found.empty()) {
+            return found;
+        }
+        std::string parent = getParentDirectory(searchDir);
+        if (parent == searchDir || parent.empty()) break;
+        searchDir = parent;
+    }
+    
+    // 2. 从loong.exe所在目录开始向上查找
+    if (!executablePath_.empty()) {
+        searchDir = executablePath_;
+        while (!searchDir.empty()) {
+            std::string found = searchModuleInDirectory(searchDir, moduleName);
+            if (!found.empty()) {
+                return found;
+            }
+            // 尝试std子目录
+            found = searchModuleInDirectory(searchDir + "/std", moduleName);
+            if (!found.empty()) {
+                return found;
+            }
+            std::string parent = getParentDirectory(searchDir);
+            if (parent == searchDir || parent.empty()) break;
+            searchDir = parent;
+        }
+    }
+    
+    // 3. 从当前工作目录查找
+    searchDir = currentDirectory_;
+    while (!searchDir.empty()) {
+        std::string found = searchModuleInDirectory(searchDir, moduleName);
+        if (!found.empty()) {
+            return found;
+        }
+        found = searchModuleInDirectory(searchDir + "/std", moduleName);
+        if (!found.empty()) {
+            return found;
+        }
+        std::string parent = getParentDirectory(searchDir);
+        if (parent == searchDir || parent.empty()) break;
+        searchDir = parent;
+    }
+    
+    // 4. 最后尝试简单路径
+    std::string simplePath = "std/" + moduleName + ".loong";
+    std::ifstream test(simplePath);
+    if (test.is_open()) {
+        test.close();
+        return simplePath;
+    }
+    
+    return "";
+}
+
+LoongValue Interpreter::loadModule(const std::string& moduleName, const std::string& filePath) {
+    // 检查是否已加载
+    if (loadedModules_.find(moduleName) != loadedModules_.end()) {
+        // 返回nil表示已加载过，调用者不需要再注册
+        return LoongValue::nil();
+    }
+    
+    // 解析模块路径
+    std::string path = resolveModulePath(moduleName, filePath);
+    
+    if (path.empty()) {
+        LOONG_IMPORT_ERROR("无法找到模块: " + moduleName);
+    }
+    
+    // 读取文件
+    std::ifstream file(path);
+    if (!file.is_open()) {
+        LOONG_IMPORT_ERROR("无法加载模块: " + moduleName + " (路径: " + path + ")");
+    }
+    
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    std::string source = buffer.str();
+    file.close();
+    
+    // 记录当前源文件（用于嵌套导入）
+    std::string previousSourceFile = currentSourceFile_;
+    currentSourceFile_ = path;
+    importStack_.push_back(path);
+    
+    // 词法分析
+    Lexer lexer(source);
+    auto tokens = lexer.tokenize();
+    
+    // 语法分析
+    Parser parser(tokens);
+    Program program = parser.parse();
+    
+    if (parser.hadError()) {
+        currentSourceFile_ = previousSourceFile;
+        importStack_.pop_back();
+        LOONG_IMPORT_ERROR("模块 " + moduleName + " 语法错误: " + parser.getErrorMessage());
+    }
+    
+    // 创建模块专属环境，以globals_为父环境
+    auto moduleEnv = std::make_shared<Environment>(globals_);
+    auto previous = environment_;
+    environment_ = moduleEnv;
+    
+    try {
+        // 执行模块代码
+        for (const auto& stmt : program.statements) {
+            execute(stmt);
+        }
+    } catch (const LoongError& e) {
+        environment_ = previous;
+        currentSourceFile_ = previousSourceFile;
+        importStack_.pop_back();
+        throw;
+    }
+    
+    // 收集模块中定义的变量和函数，打包成Dict
+    std::map<std::string, LoongValue> moduleMembers;
+    for (const auto& [name, value] : moduleEnv->getValues()) {
+        // 只过滤掉内置函数（类型为BUILTIN_FUNCTION）
+        // 允许模块导出与全局变量同名的变量（如PI、E等常量）
+        if (value.type != ValueType::BUILTIN_FUNCTION) {
+            moduleMembers[name] = value;
+        }
+    }
+    
+    environment_ = previous;
+    currentSourceFile_ = previousSourceFile;
+    importStack_.pop_back();
+    loadedModules_.insert(moduleName);
+    
+    return LoongValue::dict(moduleMembers);
+}
+
+void Interpreter::interpret(const Program& program) {
+    for (const auto& stmt : program.statements) {
+        execute(stmt);
+    }
+}
+
+// ==================== 内置函数 ====================
+
+void Interpreter::registerBuiltinFunctions() {
+    // print - 打印不换行
+    globals_->define("print", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) {
+            for (const auto& arg : args) {
+                std::cout << arg.toString();
+            }
+            return LoongValue::nil();
+        }
+    ));
+    
+    // println - 打印换行
+    globals_->define("println", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) {
+            for (const auto& arg : args) {
+                std::cout << arg.toString();
+            }
+            std::cout << std::endl;
+            return LoongValue::nil();
+        }
+    ));
+    
+    // input - 读取输入
+    globals_->define("input", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) {
+            if (!args.empty()) {
+                std::cout << args[0].toString();
+            }
+            std::string line;
+            std::getline(std::cin, line);
+            return LoongValue::string(line);
+        }
+    ));
+    
+    // len - 获取长度
+    globals_->define("len", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) {
+                throw std::runtime_error("len() 需要一个参数");
+            }
+            const auto& arg = args[0];
+            if (arg.isString()) {
+                return LoongValue::number(arg.stringValue.length());
+            }
+            if (arg.isList()) {
+                return LoongValue::number(arg.listValue.size());
+            }
+            if (arg.isDict()) {
+                return LoongValue::number(arg.dictValue.size());
+            }
+            throw std::runtime_error("len() 参数必须是字符串、列表或字典");
+        }
+    ));
+    
+    // type - 获取类型
+    globals_->define("type", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) {
+                return LoongValue::string("nil");
+            }
+            return LoongValue::string(args[0].typeName());
+        }
+    ));
+    
+    // str - 转字符串
+    globals_->define("str", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) {
+                return LoongValue::string("nil");
+            }
+            return LoongValue::string(args[0].toString());
+        }
+    ));
+    
+    // num - 转数字
+    globals_->define("num", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) {
+                return LoongValue::number(0);
+            }
+            if (args[0].isNumber()) {
+                return args[0];
+            }
+            if (args[0].isString()) {
+                try {
+                    return LoongValue::number(std::stod(args[0].stringValue));
+                } catch (...) {
+                    throw std::runtime_error("无法将字符串转换为数字: " + args[0].stringValue);
+                }
+            }
+            throw std::runtime_error("无法将 " + args[0].typeName() + " 转换为数字");
+        }
+    ));
+    
+    // push - 列表添加元素（返回新列表）
+    globals_->define("push", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2) {
+                throw std::runtime_error("push() 需要两个参数");
+            }
+            if (!args[0].isList()) {
+                throw std::runtime_error("push() 第一个参数必须是列表");
+            }
+            auto list = args[0].listValue;
+            list.push_back(args[1]);
+            return LoongValue::list(list);
+        }
+    ));
+    
+    // pop - 列表弹出元素（返回新列表）
+    globals_->define("pop", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isList()) {
+                throw std::runtime_error("pop() 需要一个列表参数");
+            }
+            auto list = args[0].listValue;
+            if (list.empty()) {
+                throw std::runtime_error("无法从空列表弹出元素");
+            }
+            return list.back();
+        }
+    ));
+    
+    // ========== 字符串函数 ==========
+    
+    // split - 分割字符串
+    globals_->define("split", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("split() 需要两个字符串参数");
+            }
+            std::vector<LoongValue> result;
+            std::string str = args[0].stringValue;
+            std::string sep = args[1].stringValue;
+            if (sep.empty()) {
+                for (char c : str) {
+                    result.push_back(LoongValue::string(std::string(1, c)));
+                }
+                return LoongValue::list(result);
+            }
+            size_t pos = 0, prev = 0;
+            while ((pos = str.find(sep, prev)) != std::string::npos) {
+                result.push_back(LoongValue::string(str.substr(prev, pos - prev)));
+                prev = pos + sep.length();
+            }
+            result.push_back(LoongValue::string(str.substr(prev)));
+            return LoongValue::list(result);
+        }
+    ));
+    
+    // join - 连接列表为字符串
+    globals_->define("join", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isList() || !args[1].isString()) {
+                throw std::runtime_error("join() 需要一个列表和一个分隔符");
+            }
+            std::string result;
+            for (size_t i = 0; i < args[0].listValue.size(); i++) {
+                if (i > 0) result += args[1].stringValue;
+                result += args[0].listValue[i].toString();
+            }
+            return LoongValue::string(result);
+        }
+    ));
+    
+    // trim - 去除首尾空白
+    globals_->define("trim", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("trim() 需要一个字符串参数");
+            }
+            std::string s = args[0].stringValue;
+            size_t start = s.find_first_not_of(" \t\n\r");
+            if (start == std::string::npos) return LoongValue::string("");
+            size_t end = s.find_last_not_of(" \t\n\r");
+            return LoongValue::string(s.substr(start, end - start + 1));
+        }
+    ));
+    
+    // replace - 替换子串
+    globals_->define("replace", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 3 || !args[0].isString() || !args[1].isString() || !args[2].isString()) {
+                throw std::runtime_error("replace() 需要三个字符串参数");
+            }
+            std::string result = args[0].stringValue;
+            std::string oldStr = args[1].stringValue;
+            std::string newStr = args[2].stringValue;
+            size_t pos = 0;
+            while ((pos = result.find(oldStr, pos)) != std::string::npos) {
+                result.replace(pos, oldStr.length(), newStr);
+                pos += newStr.length();
+            }
+            return LoongValue::string(result);
+        }
+    ));
+    
+    // upper - 转大写
+    globals_->define("upper", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("upper() 需要一个字符串参数");
+            }
+            std::string s = args[0].stringValue;
+            for (char& c : s) c = std::toupper(c);
+            return LoongValue::string(s);
+        }
+    ));
+    
+    // lower - 转小写
+    globals_->define("lower", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("lower() 需要一个字符串参数");
+            }
+            std::string s = args[0].stringValue;
+            for (char& c : s) c = std::tolower(c);
+            return LoongValue::string(s);
+        }
+    ));
+    
+    // startswith - 检查前缀
+    globals_->define("startswith", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("startswith() 需要两个字符串参数");
+            }
+            std::string s = args[0].stringValue;
+            std::string prefix = args[1].stringValue;
+            if (prefix.length() > s.length()) return LoongValue::boolean(false);
+            return LoongValue::boolean(s.substr(0, prefix.length()) == prefix);
+        }
+    ));
+    
+    // endswith - 检查后缀
+    globals_->define("endswith", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("endswith() 需要两个字符串参数");
+            }
+            std::string s = args[0].stringValue;
+            std::string suffix = args[1].stringValue;
+            if (suffix.length() > s.length()) return LoongValue::boolean(false);
+            return LoongValue::boolean(s.substr(s.length() - suffix.length()) == suffix);
+        }
+    ));
+    
+    // find - 查找子串位置
+    globals_->define("find", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("find() 需要两个字符串参数");
+            }
+            size_t pos = args[0].stringValue.find(args[1].stringValue);
+            if (pos == std::string::npos) return LoongValue::number(-1);
+            return LoongValue::number(static_cast<double>(pos));
+        }
+    ));
+    
+    // substr - 截取子串
+    globals_->define("substr", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isNumber()) {
+                throw std::runtime_error("substr() 需要字符串和起始位置");
+            }
+            std::string s = args[0].stringValue;
+            int start = static_cast<int>(args[1].numberValue);
+            if (start < 0) start = 0;
+            if (start >= static_cast<int>(s.length())) return LoongValue::string("");
+            if (args.size() >= 3 && args[2].isNumber()) {
+                int len = static_cast<int>(args[2].numberValue);
+                return LoongValue::string(s.substr(start, len));
+            }
+            return LoongValue::string(s.substr(start));
+        }
+    ));
+    
+    // abs - 绝对值
+    globals_->define("abs", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("abs() 需要一个数字参数");
+            }
+            return LoongValue::number(std::abs(args[0].numberValue));
+        }
+    ));
+    
+    // sqrt - 平方根
+    globals_->define("sqrt", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("sqrt() 需要一个数字参数");
+            }
+            return LoongValue::number(std::sqrt(args[0].numberValue));
+        }
+    ));
+    
+    // floor - 向下取整
+    globals_->define("floor", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("floor() 需要一个数字参数");
+            }
+            return LoongValue::number(std::floor(args[0].numberValue));
+        }
+    ));
+    
+    // ceil - 向上取整
+    globals_->define("ceil", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("ceil() 需要一个数字参数");
+            }
+            return LoongValue::number(std::ceil(args[0].numberValue));
+        }
+    ));
+    
+    // range - 生成范围
+    globals_->define("range", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            std::vector<LoongValue> result;
+            
+            if (args.size() == 1) {
+                // range(n) -> 0 to n-1
+                int end = static_cast<int>(args[0].numberValue);
+                for (int i = 0; i < end; i++) {
+                    result.push_back(LoongValue::number(i));
+                }
+            } else if (args.size() == 2) {
+                // range(start, end)
+                int start = static_cast<int>(args[0].numberValue);
+                int end = static_cast<int>(args[1].numberValue);
+                for (int i = start; i < end; i++) {
+                    result.push_back(LoongValue::number(i));
+                }
+            } else if (args.size() >= 3) {
+                // range(start, end, step)
+                int start = static_cast<int>(args[0].numberValue);
+                int end = static_cast<int>(args[1].numberValue);
+                int step = static_cast<int>(args[2].numberValue);
+                if (step > 0) {
+                    for (int i = start; i < end; i += step) {
+                        result.push_back(LoongValue::number(i));
+                    }
+                } else if (step < 0) {
+                    for (int i = start; i > end; i += step) {
+                        result.push_back(LoongValue::number(i));
+                    }
+                }
+            }
+            
+            return LoongValue::list(result);
+        }
+    ));
+    
+    // ========== 数学函数 ==========
+    
+    // round - 四舍五入
+    globals_->define("round", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("round() 需要一个数字参数");
+            }
+            return LoongValue::number(std::round(args[0].numberValue));
+        }
+    ));
+    
+    // pow - 幂运算
+    globals_->define("pow", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+                throw std::runtime_error("pow() 需要两个数字参数");
+            }
+            return LoongValue::number(std::pow(args[0].numberValue, args[1].numberValue));
+        }
+    ));
+    
+    // log - 自然对数
+    globals_->define("log", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("log() 需要一个数字参数");
+            }
+            return LoongValue::number(std::log(args[0].numberValue));
+        }
+    ));
+    
+    // log10 - 以10为底对数
+    globals_->define("log10", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("log10() 需要一个数字参数");
+            }
+            return LoongValue::number(std::log10(args[0].numberValue));
+        }
+    ));
+    
+    // sin - 正弦
+    globals_->define("sin", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("sin() 需要一个数字参数");
+            }
+            return LoongValue::number(std::sin(args[0].numberValue));
+        }
+    ));
+    
+    // cos - 余弦
+    globals_->define("cos", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("cos() 需要一个数字参数");
+            }
+            return LoongValue::number(std::cos(args[0].numberValue));
+        }
+    ));
+    
+    // tan - 正切
+    globals_->define("tan", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("tan() 需要一个数字参数");
+            }
+            return LoongValue::number(std::tan(args[0].numberValue));
+        }
+    ));
+    
+    // asin - 反正弦
+    globals_->define("asin", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("asin() 需要一个数字参数");
+            }
+            return LoongValue::number(std::asin(args[0].numberValue));
+        }
+    ));
+    
+    // acos - 反余弦
+    globals_->define("acos", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("acos() 需要一个数字参数");
+            }
+            return LoongValue::number(std::acos(args[0].numberValue));
+        }
+    ));
+    
+    // atan - 反正切
+    globals_->define("atan", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("atan() 需要一个数字参数");
+            }
+            return LoongValue::number(std::atan(args[0].numberValue));
+        }
+    ));
+    
+    // random - 随机数(0-1)
+    globals_->define("random", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            static bool seeded = false;
+            if (!seeded) {
+                std::srand(static_cast<unsigned>(std::time(nullptr)));
+                seeded = true;
+            }
+            double r = static_cast<double>(std::rand()) / RAND_MAX;
+            return LoongValue::number(r);
+        }
+    ));
+    
+    // random_int - 随机整数
+    globals_->define("random_int", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+                throw std::runtime_error("random_int() 需要两个数字参数");
+            }
+            static bool seeded = false;
+            if (!seeded) {
+                std::srand(static_cast<unsigned>(std::time(nullptr)));
+                seeded = true;
+            }
+            int min = static_cast<int>(args[0].numberValue);
+            int max = static_cast<int>(args[1].numberValue);
+            if (min > max) { int tmp = min; min = max; max = tmp; }
+            return LoongValue::number(min + (std::rand() % (max - min + 1)));
+        }
+    ));
+    
+    // PI - 圆周率常量
+    globals_->define("PI", LoongValue::number(3.14159265358979323846));
+    
+    // E - 自然常数
+    globals_->define("E", LoongValue::number(2.71828182845904523536));
+    
+    // ========== 文件IO函数 ==========
+    
+    // file_read - 读取文件
+    globals_->define("file_read", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("file_read() 需要一个文件路径参数");
+            }
+            std::ifstream file(args[0].stringValue);
+            if (!file.is_open()) {
+                return LoongValue::nil();
+            }
+            std::stringstream buffer;
+            buffer << file.rdbuf();
+            return LoongValue::string(buffer.str());
+        }
+    ));
+    
+    // file_write - 写入文件
+    globals_->define("file_write", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("file_write() 需要文件路径和内容参数");
+            }
+            std::ofstream file(args[0].stringValue);
+            if (!file.is_open()) {
+                return LoongValue::boolean(false);
+            }
+            file << args[1].stringValue;
+            return LoongValue::boolean(true);
+        }
+    ));
+    
+    // file_append - 追加内容
+    globals_->define("file_append", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("file_append() 需要文件路径和内容参数");
+            }
+            std::ofstream file(args[0].stringValue, std::ios::app);
+            if (!file.is_open()) {
+                return LoongValue::boolean(false);
+            }
+            file << args[1].stringValue;
+            return LoongValue::boolean(true);
+        }
+    ));
+    
+    // file_exists - 检查文件是否存在
+    globals_->define("file_exists", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("file_exists() 需要一个文件路径参数");
+            }
+            std::ifstream file(args[0].stringValue);
+            return LoongValue::boolean(file.good());
+        }
+    ));
+    
+    // file_delete - 删除文件
+    globals_->define("file_delete", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("file_delete() 需要一个文件路径参数");
+            }
+            return LoongValue::boolean(std::remove(args[0].stringValue.c_str()) == 0);
+        }
+    ));
+    
+    // ========== 时间函数 ==========
+    
+    // time_now - 当前时间戳
+    globals_->define("time_now", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            return LoongValue::number(static_cast<double>(
+                std::chrono::duration_cast<std::chrono::seconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count()
+            ));
+        }
+    ));
+    
+    // time_ms - 当前毫秒时间戳
+    globals_->define("time_ms", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            return LoongValue::number(static_cast<double>(
+                std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()
+                ).count()
+            ));
+        }
+    ));
+    
+    // sleep - 休眠毫秒
+    globals_->define("sleep", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("sleep() 需要一个毫秒数参数");
+            }
+            int ms = static_cast<int>(args[0].numberValue);
+            std::this_thread::sleep_for(std::chrono::milliseconds(ms));
+            return LoongValue::nil();
+        }
+    ));
+    
+    // ========== 列表增强函数 ==========
+    
+    // reverse - 反转列表
+    globals_->define("reverse", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isList()) {
+                throw std::runtime_error("reverse() 需要一个列表参数");
+            }
+            auto list = args[0].listValue;
+            std::reverse(list.begin(), list.end());
+            return LoongValue::list(list);
+        }
+    ));
+    
+    // slice - 列表切片
+    globals_->define("slice", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isList() || !args[1].isNumber()) {
+                throw std::runtime_error("slice() 需要列表和起始索引");
+            }
+            auto list = args[0].listValue;
+            int start = static_cast<int>(args[1].numberValue);
+            if (start < 0) start = 0;
+            if (start >= static_cast<int>(list.size())) return LoongValue::list({});
+            
+            if (args.size() >= 3 && args[2].isNumber()) {
+                int end = static_cast<int>(args[2].numberValue);
+                if (end < 0) end = list.size();
+                return LoongValue::list(std::vector<LoongValue>(list.begin() + start, list.begin() + end));
+            }
+            return LoongValue::list(std::vector<LoongValue>(list.begin() + start, list.end()));
+        }
+    ));
+    
+    // concat - 连接列表
+    globals_->define("concat", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isList() || !args[1].isList()) {
+                throw std::runtime_error("concat() 需要两个列表参数");
+            }
+            auto result = args[0].listValue;
+            for (const auto& item : args[1].listValue) {
+                result.push_back(item);
+            }
+            return LoongValue::list(result);
+        }
+    ));
+    
+    // insert - 插入元素
+    globals_->define("insert", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 3 || !args[0].isList() || !args[1].isNumber()) {
+                throw std::runtime_error("insert() 需要列表、索引和元素参数");
+            }
+            auto list = args[0].listValue;
+            int index = static_cast<int>(args[1].numberValue);
+            if (index < 0) index = 0;
+            if (index > static_cast<int>(list.size())) index = list.size();
+            list.insert(list.begin() + index, args[2]);
+            return LoongValue::list(list);
+        }
+    ));
+    
+    // remove_at - 删除指定索引元素
+    globals_->define("remove_at", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isList() || !args[1].isNumber()) {
+                throw std::runtime_error("remove_at() 需要列表和索引参数");
+            }
+            auto list = args[0].listValue;
+            int index = static_cast<int>(args[1].numberValue);
+            if (index < 0 || index >= static_cast<int>(list.size())) {
+                throw std::runtime_error("remove_at() 索引越界");
+            }
+            list.erase(list.begin() + index);
+            return LoongValue::list(list);
+        }
+    ));
+    
+    // first - 获取第一个元素
+    globals_->define("first", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isList()) {
+                throw std::runtime_error("first() 需要一个列表参数");
+            }
+            if (args[0].listValue.empty()) return LoongValue::nil();
+            return args[0].listValue[0];
+        }
+    ));
+    
+    // last - 获取最后一个元素
+    globals_->define("last", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isList()) {
+                throw std::runtime_error("last() 需要一个列表参数");
+            }
+            if (args[0].listValue.empty()) return LoongValue::nil();
+            return args[0].listValue.back();
+        }
+    ));
+    
+    // ========== 类型判断函数 ==========
+    
+    // is_null - 判断是否为nil
+    globals_->define("is_null", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) return LoongValue::boolean(true);
+            return LoongValue::boolean(args[0].isNil());
+        }
+    ));
+    
+    // is_number - 判断是否为数字
+    globals_->define("is_number", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) return LoongValue::boolean(false);
+            return LoongValue::boolean(args[0].isNumber());
+        }
+    ));
+    
+    // is_string - 判断是否为字符串
+    globals_->define("is_string", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) return LoongValue::boolean(false);
+            return LoongValue::boolean(args[0].isString());
+        }
+    ));
+    
+    // is_list - 判断是否为列表
+    globals_->define("is_list", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) return LoongValue::boolean(false);
+            return LoongValue::boolean(args[0].isList());
+        }
+    ));
+    
+    // is_dict - 判断是否为字典
+    globals_->define("is_dict", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) return LoongValue::boolean(false);
+            return LoongValue::boolean(args[0].isDict());
+        }
+    ));
+    
+    // is_function - 判断是否为函数
+    globals_->define("is_function", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) return LoongValue::boolean(false);
+            return LoongValue::boolean(args[0].isFunction());
+        }
+    ));
+    
+    // bool - 转布尔值
+    globals_->define("bool", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) return LoongValue::boolean(false);
+            return LoongValue::boolean(args[0].isTruthy());
+        }
+    ));
+    
+    // int - 转整数
+    globals_->define("int", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) return LoongValue::number(0);
+            if (args[0].isNumber()) {
+                return LoongValue::number(static_cast<double>(static_cast<long long>(args[0].numberValue)));
+            }
+            if (args[0].isString()) {
+                try {
+                    return LoongValue::number(static_cast<double>(std::stoll(args[0].stringValue)));
+                } catch (...) {
+                    return LoongValue::number(0);
+                }
+            }
+            return LoongValue::number(0);
+        }
+    ));
+    
+    // ========== HTTP网络请求函数 ==========
+    
+    // http_get - GET请求
+    globals_->define("http_get", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("http_get() 需要一个URL参数");
+            }
+            std::string url = args[0].stringValue;
+            std::map<std::string, std::string> headers;
+            
+            // 可选的headers参数
+            if (args.size() > 1 && args[1].isDict()) {
+                for (const auto& h : args[1].dictValue) {
+                    headers[h.first] = h.second.toString();
+                }
+            }
+            
+            HttpResponse resp = HttpClient::get(url, headers);
+            
+            // 返回结果字典
+            std::map<std::string, LoongValue> result;
+            result["status"] = LoongValue::number(resp.statusCode);
+            result["body"] = LoongValue::string(resp.body);
+            result["success"] = LoongValue::boolean(resp.success);
+            result["error"] = LoongValue::string(resp.error);
+            
+            // 响应头
+            std::map<std::string, LoongValue> respHeaders;
+            for (const auto& h : resp.headers) {
+                respHeaders[h.first] = LoongValue::string(h.second);
+            }
+            result["headers"] = LoongValue::dict(respHeaders);
+            
+            return LoongValue::dict(result);
+        }
+    ));
+    
+    // http_post - POST请求
+    globals_->define("http_post", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("http_post() 需要URL参数");
+            }
+            std::string url = args[0].stringValue;
+            std::string body = args.size() > 1 && args[1].isString() ? args[1].stringValue : "";
+            std::map<std::string, std::string> headers;
+            
+            // 可选的headers参数
+            if (args.size() > 2 && args[2].isDict()) {
+                for (const auto& h : args[2].dictValue) {
+                    headers[h.first] = h.second.toString();
+                }
+            }
+            
+            HttpResponse resp = HttpClient::post(url, body, headers);
+            
+            std::map<std::string, LoongValue> result;
+            result["status"] = LoongValue::number(resp.statusCode);
+            result["body"] = LoongValue::string(resp.body);
+            result["success"] = LoongValue::boolean(resp.success);
+            result["error"] = LoongValue::string(resp.error);
+            
+            std::map<std::string, LoongValue> respHeaders;
+            for (const auto& h : resp.headers) {
+                respHeaders[h.first] = LoongValue::string(h.second);
+            }
+            result["headers"] = LoongValue::dict(respHeaders);
+            
+            return LoongValue::dict(result);
+        }
+    ));
+    
+    // http_request - 通用HTTP请求
+    globals_->define("http_request", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("http_request() 需要URL和method参数");
+            }
+            std::string url = args[0].stringValue;
+            std::string method = args[1].stringValue;
+            std::string body = args.size() > 2 && args[2].isString() ? args[2].stringValue : "";
+            std::map<std::string, std::string> headers;
+            
+            if (args.size() > 3 && args[3].isDict()) {
+                for (const auto& h : args[3].dictValue) {
+                    headers[h.first] = h.second.toString();
+                }
+            }
+            
+            HttpResponse resp = HttpClient::request(url, method, body, headers);
+            
+            std::map<std::string, LoongValue> result;
+            result["status"] = LoongValue::number(resp.statusCode);
+            result["body"] = LoongValue::string(resp.body);
+            result["success"] = LoongValue::boolean(resp.success);
+            result["error"] = LoongValue::string(resp.error);
+            
+            std::map<std::string, LoongValue> respHeaders;
+            for (const auto& h : resp.headers) {
+                respHeaders[h.first] = LoongValue::string(h.second);
+            }
+            result["headers"] = LoongValue::dict(respHeaders);
+            
+            return LoongValue::dict(result);
+        }
+    ));
+    
+    // ========== HTML解析函数 ==========
+    
+    // html_tag - 提取所有指定标签内容
+    globals_->define("html_tag", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("html_tag() 需要HTML和标签名参数");
+            }
+            std::string html = args[0].stringValue;
+            std::string tag = args[1].stringValue;
+            std::vector<LoongValue> results;
+            
+            std::string openTag = "<" + tag;
+            std::string closeTag = "</" + tag + ">";
+            size_t pos = 0;
+            
+            while ((pos = html.find(openTag, pos)) != std::string::npos) {
+                size_t tagEnd = html.find('>', pos);
+                if (tagEnd == std::string::npos) break;
+                
+                size_t contentStart = tagEnd + 1;
+                size_t closePos = html.find(closeTag, contentStart);
+                if (closePos == std::string::npos) break;
+                
+                std::string content = html.substr(contentStart, closePos - contentStart);
+                results.push_back(LoongValue::string(content));
+                pos = closePos + closeTag.length();
+            }
+            
+            return LoongValue::list(results);
+        }
+    ));
+    
+    // html_attr - 提取标签属性
+    globals_->define("html_attr", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("html_attr() 需要HTML片段和属性名参数");
+            }
+            std::string html = args[0].stringValue;
+            std::string attr = args[1].stringValue;
+            
+            std::string pattern1 = attr + "=\"";
+            std::string pattern2 = attr + "='";
+            
+            size_t pos = html.find(pattern1);
+            char quote = '"';
+            if (pos == std::string::npos) {
+                pos = html.find(pattern2);
+                quote = '\'';
+            }
+            
+            if (pos == std::string::npos) return LoongValue::nil();
+            
+            size_t start = pos + attr.length() + 2;
+            size_t end = html.find(quote, start);
+            if (end == std::string::npos) return LoongValue::nil();
+            
+            return LoongValue::string(html.substr(start, end - start));
+        }
+    ));
+    
+    // html_text - 提取纯文本
+    globals_->define("html_text", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("html_text() 需要HTML参数");
+            }
+            std::string html = args[0].stringValue;
+            std::string result;
+            bool inTag = false;
+            
+            for (char c : html) {
+                if (c == '<') {
+                    inTag = true;
+                } else if (c == '>') {
+                    inTag = false;
+                } else if (!inTag) {
+                    result += c;
+                }
+            }
+            
+            // 处理HTML实体
+            size_t pos = 0;
+            while ((pos = result.find("&nbsp;")) != std::string::npos) {
+                result.replace(pos, 6, " ");
+            }
+            while ((pos = result.find("&lt;")) != std::string::npos) {
+                result.replace(pos, 4, "<");
+            }
+            while ((pos = result.find("&gt;")) != std::string::npos) {
+                result.replace(pos, 4, ">");
+            }
+            while ((pos = result.find("&amp;")) != std::string::npos) {
+                result.replace(pos, 5, "&");
+            }
+            
+            return LoongValue::string(result);
+        }
+    ));
+    
+    // html_links - 提取所有链接
+    globals_->define("html_links", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("html_links() 需要HTML参数");
+            }
+            std::string html = args[0].stringValue;
+            std::vector<LoongValue> links;
+            
+            size_t pos = 0;
+            while ((pos = html.find("href=", pos)) != std::string::npos) {
+                char quote = html[pos + 5];
+                if (quote == '"' || quote == '\'') {
+                    size_t start = pos + 6;
+                    size_t end = html.find(quote, start);
+                    if (end != std::string::npos) {
+                        links.push_back(LoongValue::string(html.substr(start, end - start)));
+                        pos = end + 1;
+                        continue;
+                    }
+                }
+                pos++;
+            }
+            
+            return LoongValue::list(links);
+        }
+    ));
+    
+    // url_encode - URL编码
+    globals_->define("url_encode", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("url_encode() 需要字符串参数");
+            }
+            std::string s = args[0].stringValue;
+            std::string result;
+            
+            for (char c : s) {
+                if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') {
+                    result += c;
+                } else {
+                    char buf[4];
+                    sprintf(buf, "%%%02X", (unsigned char)c);
+                    result += buf;
+                }
+            }
+            
+            return LoongValue::string(result);
+        }
+    ));
+    
+    // url_decode - URL解码
+    globals_->define("url_decode", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("url_decode() 需要字符串参数");
+            }
+            std::string s = args[0].stringValue;
+            std::string result;
+            
+            for (size_t i = 0; i < s.length(); i++) {
+                if (s[i] == '%' && i + 2 < s.length()) {
+                    int val;
+                    sscanf(s.substr(i + 1, 2).c_str(), "%x", &val);
+                    result += (char)val;
+                    i += 2;
+                } else if (s[i] == '+') {
+                    result += ' ';
+                } else {
+                    result += s[i];
+                }
+            }
+            
+            return LoongValue::string(result);
+        }
+    ));
+}
+
+} // namespace loong
