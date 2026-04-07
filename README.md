@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](installer/output/loong-1.0.0-setup.exe)** (v1.0.0)
+📥 **[下载 Windows 安装包](loong-1.0.0-setup.exe)** (v1.0.0)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
