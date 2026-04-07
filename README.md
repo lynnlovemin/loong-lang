@@ -4,6 +4,15 @@
 
 **Loong**（龙）是一款解释型编程语言，寓意为龙。采用C++17开发，具有简洁优雅的语法。
 
+## 下载安装
+
+📥 **[下载 Windows 安装包](installer/output/loong-1.0.0-setup.exe)** (v1.0.0)
+
+安装包功能：
+- 自动安装 loong.exe 到指定目录
+- 包含 std 标准库
+- 可选添加到系统 PATH 环境变量
+
 ## 语法特点
 
 | 特性 | Loong | Python |
