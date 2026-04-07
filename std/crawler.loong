@@ -76,8 +76,18 @@ class Response {
         self.headers = resp["headers"];
     }
     
-    // 获取JSON（简单解析）
+    // 获取原始body内容
     fn json() {
+        return self.body;
+    }
+    
+    // 获取响应文本（HTML解析后的纯文本）
+    fn text() {
+        return html_text(self.body);
+    }
+    
+    // 获取原始HTML内容
+    fn html() {
         return self.body;
     }
     
@@ -94,11 +104,6 @@ class Response {
     // 提取所有指定标签
     fn tags(name) {
         return html_tag(self.body, name);
-    }
-    
-    // 提取纯文本
-    fn text() {
-        return html_text(self.body);
     }
     
     // 提取指定属性
@@ -118,6 +123,16 @@ class Response {
     // 查找所有匹配
     fn findAll(tagName) {
         return self.tags(tagName);
+    }
+    
+    // 打印响应摘要
+    fn printSummary() {
+        println("Status: ", self.status);
+        println("Success: ", self.success);
+        if self.error != "" {
+            println("Error: ", self.error);
+        }
+        println("Body Length: ", len(self.body));
     }
 }
 
