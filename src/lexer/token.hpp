@@ -62,6 +62,17 @@ enum class TokenType {
     AND,            // and
     OR,             // or
     NOT,            // not
+    AND_AND,        // &&
+    OR_OR,          // ||
+    BANG,           // !
+
+    // 位运算符
+    LSHIFT,         // <<
+    RSHIFT,         // >>
+    XOR,            // ^
+    BITNOT,         // ~
+    BITAND,         // &
+    BITOR,          // |
 
     // 赋值
     EQUAL,          // =
@@ -137,6 +148,15 @@ struct Token {
             case TokenType::AND: return "AND";
             case TokenType::OR: return "OR";
             case TokenType::NOT: return "NOT";
+            case TokenType::AND_AND: return "AND_AND";
+            case TokenType::OR_OR: return "OR_OR";
+            case TokenType::BANG: return "BANG";
+            case TokenType::LSHIFT: return "LSHIFT";
+            case TokenType::RSHIFT: return "RSHIFT";
+            case TokenType::XOR: return "XOR";
+            case TokenType::BITNOT: return "BITNOT";
+            case TokenType::BITAND: return "BITAND";
+            case TokenType::BITOR: return "BITOR";
             case TokenType::EQUAL: return "EQUAL";
             case TokenType::LPAREN: return "LPAREN";
             case TokenType::RPAREN: return "RPAREN";

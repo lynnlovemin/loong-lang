@@ -1,4 +1,4 @@
-# Loong 编程语言 v1.0.0
+# Loong 编程语言 v1.1.0
 
 ## 简介
 
@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](loong-1.0.0-setup.exe)** (v1.0.0)
+📥 **[下载 Windows 安装包](loong-1.0.0-setup.exe)** (v1.1.0)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
@@ -24,6 +24,25 @@
 | For循环 | `for init; cond; update {}` | `for x in range():` |
 | 注释 | `//` 和 `/* */` | `#` |
 | 语句结束 | 分号可选 | 换行 |
+
+### 运算符
+
+**逻辑运算符**
+| 运算符 | 说明 | 示例 |
+|--------|------|------|
+| `&&` / `and` | 逻辑与 | `a && b` |
+| `\|\|` / `or` | 逻辑或 | `a \|\| b` |
+| `!` / `not` | 逻辑非 | `!a` |
+
+**位运算符**
+| 运算符 | 说明 | 示例 |
+|--------|------|------|
+| `&` | 位与 | `5 & 3` → `1` |
+| `\|` | 位或 | `5 \| 3` → `7` |
+| `^` | 异或 | `5 ^ 3` → `6` |
+| `~` | 位取反 | `~0` → `-1` |
+| `<<` | 左移 | `1 << 4` → `16` |
+| `>>` | 右移 | `16 >> 2` → `4` |
 
 ## 编译
 
@@ -342,6 +361,115 @@ val text = html_text(html);    // 提取纯文本
 - `url_encode(str)` - URL编码
 - `url_decode(str)` - URL解码
 
+### 网络协议（TCP/UDP/Socket）
+Loong v1.1.0 提供底层网络协议支持：
+
+#### TCP客户端
+```loong
+import net from "std/net.loong";
+
+val client = net.TcpClient();
+client.setTimeout(5000);
+
+if client.connect("example.com", 80) {
+    client.send("GET / HTTP/1.1\r\nHost: example.com\r\n\r\n");
+    val response = client.recvAll();
+    println(response);
+    client.close();
+}
+```
+
+#### UDP客户端
+```loong
+import net from "std/net.loong";
+
+val udp = net.UdpClient();
+udp.open();
+
+// 发送UDP数据
+udp.send("127.0.0.1", 8080, "Hello UDP!");
+
+// 绑定端口接收数据
+udp.bind(9090);
+val data = udp.recv(1024);
+println("收到来自 " + data.host + ":" + str(data.port) + " 的数据: " + data.data);
+
+udp.close();
+```
+
+#### DNS解析
+```loong
+import net from "std/net.loong";
+
+val ip = net.dnsResolve("www.example.com");
+println("IP地址: " + ip);
+
+val hostname = net.dnsReverse("93.184.216.34");
+println("域名: " + hostname);
+```
+
+#### 端口检查
+```loong
+import net from "std/net.loong";
+
+if net.isPortOpen("example.com", 80) {
+    println("端口80开放");
+}
+
+// 使用NetUtils扫描端口
+val utils = net.NetUtils();
+val openPorts = utils.scanPorts("192.168.1.1", 1, 100);
+println("开放端口: " + str(openPorts));
+```
+
+#### TCP服务器
+```loong
+import net from "std/net.loong";
+
+val server = net.TcpServer();
+
+if server.bind(8080) && server.listen(5) {
+    println("服务器启动，监听端口8080");
+    
+    // 接受客户端连接
+    val client = server.acceptClient();
+    if client != nil {
+        // 接收数据
+        val data = client.recv(1024);
+        println("收到: " + data);
+        
+        // 发送响应
+        client.send("Hello from server!");
+        client.close();
+    }
+    
+    server.close();
+}
+```
+
+#### 网络协议内置函数
+| 函数 | 说明 |
+|------|------|
+| `tcp_connect(host, port, timeout?)` | 创建TCP连接，返回socket_id |
+| `tcp_send(socket_id, data)` | 发送TCP数据 |
+| `tcp_recv(socket_id, size?)` | 接收TCP数据 |
+| `tcp_recv_all(socket_id, maxBytes?)` | 接收所有TCP数据 |
+| `tcp_close(socket_id)` | 关闭TCP连接 |
+| `tcp_connected(socket_id)` | 检查TCP连接状态 |
+| `tcp_server_create()` | 创建TCP服务器，返回server_id |
+| `tcp_server_bind(server_id, port)` | 绑定端口 |
+| `tcp_server_listen(server_id, backlog?)` | 开始监听 |
+| `tcp_server_accept(server_id)` | 接受连接，返回client_socket_id |
+| `tcp_server_close(server_id)` | 关闭服务器 |
+| `udp_open()` | 创建UDP客户端，返回udp_id |
+| `udp_send(udp_id, host, port, data)` | 发送UDP数据 |
+| `udp_recv(udp_id, size?)` | 接收UDP数据，返回{data,host,port} |
+| `udp_bind(udp_id, port)` | 绑定UDP端口 |
+| `udp_close(udp_id)` | 关闭UDP |
+| `dns_resolve(hostname)` | DNS解析（域名→IP） |
+| `dns_reverse(ip)` | 反向DNS解析（IP→域名） |
+| `port_check(host, port, timeout?)` | 检查端口是否开放 |
+
 ## 包管理器
 
 Loong 包管理器提供简洁的包管理命令：
@@ -414,6 +542,7 @@ loong/
 - [x] 网络请求
 - [x] 包管理器
 - [ ] 并行处理
+- [x] 网络协议（HTTP、TCP、UDP、Socket）
 
 ## 许可证
 

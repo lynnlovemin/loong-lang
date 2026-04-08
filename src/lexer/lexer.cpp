@@ -223,6 +223,8 @@ void Lexer::scanToken() {
         case '*': addToken(TokenType::STAR); break;
         case '/': addToken(TokenType::SLASH); break;
         case '%': addToken(TokenType::PERCENT); break;
+        case '^': addToken(TokenType::XOR); break;
+        case '~': addToken(TokenType::BITNOT); break;
         
         // 可能是多字符的运算符
         case '=':
@@ -236,12 +238,14 @@ void Lexer::scanToken() {
             if (match('=')) {
                 addToken(TokenType::BANG_EQUAL);
             } else {
-                LOONG_LEXER_ERROR("意外的字符 '!'", line_, tokenColumn_);
+                addToken(TokenType::BANG);  // 逻辑非
             }
             break;
         case '<':
             if (match('=')) {
                 addToken(TokenType::LESS_EQUAL);
+            } else if (match('<')) {
+                addToken(TokenType::LSHIFT);  // 左移
             } else {
                 addToken(TokenType::LESS);
             }
@@ -249,8 +253,24 @@ void Lexer::scanToken() {
         case '>':
             if (match('=')) {
                 addToken(TokenType::GREATER_EQUAL);
+            } else if (match('>')) {
+                addToken(TokenType::RSHIFT);  // 右移
             } else {
                 addToken(TokenType::GREATER);
+            }
+            break;
+        case '&':
+            if (match('&')) {
+                addToken(TokenType::AND_AND);  // 逻辑与
+            } else {
+                addToken(TokenType::BITAND);  // 位与
+            }
+            break;
+        case '|':
+            if (match('|')) {
+                addToken(TokenType::OR_OR);  // 逻辑或
+            } else {
+                addToken(TokenType::BITOR);  // 位或
             }
             break;
         

@@ -1,0 +1,352 @@
+// Loong 网络协议标准库 v1.1.0
+// 提供 TCP/UDP/Socket 网络编程支持
+
+// ==================== TCP 客户端类 ====================
+
+class TcpClient {
+    fn __init__() {
+        self.sockId = 0
+        self.host = ""
+        self.port = 0
+        self.timeout = 30000
+    }
+    
+    // 连接服务器
+    fn connect(host, port) {
+        self.host = host
+        self.port = port
+        self.sockId = tcp_connect(host, port, self.timeout)
+        return self.sockId > 0
+    }
+    
+    // 设置超时（毫秒）
+    fn setTimeout(ms) {
+        self.timeout = ms
+    }
+    
+    // 发送数据
+    fn send(data) {
+        if self.sockId == 0 {
+            return -1
+        }
+        return tcp_send(self.sockId, data)
+    }
+    
+    // 接收数据
+    fn recv(size = 4096) {
+        if self.sockId == 0 {
+            return ""
+        }
+        return tcp_recv(self.sockId, size)
+    }
+    
+    // 接收所有数据
+    fn recvAll(maxBytes = 1048576) {
+        if self.sockId == 0 {
+            return ""
+        }
+        return tcp_recv_all(self.sockId, maxBytes)
+    }
+    
+    // 检查连接状态
+    fn isConnected() {
+        if self.sockId == 0 {
+            return false
+        }
+        return tcp_connected(self.sockId)
+    }
+    
+    // 关闭连接
+    fn close() {
+        if self.sockId > 0 {
+            tcp_close(self.sockId)
+            self.sockId = 0
+        }
+    }
+}
+
+// ==================== TCP 服务器类 ====================
+
+class TcpServer {
+    fn __init__() {
+        self.serverId = 0
+        self.port = 0
+        self.listening = false
+    }
+    
+    // 创建服务器
+    fn create() {
+        self.serverId = tcp_server_create()
+        return self.serverId > 0
+    }
+    
+    // 绑定端口
+    fn bind(port) {
+        if self.serverId == 0 {
+            if !self.create() {
+                return false
+            }
+        }
+        self.port = port
+        return tcp_server_bind(self.serverId, port)
+    }
+    
+    // 开始监听
+    fn listen(backlog = 5) {
+        if self.serverId == 0 {
+            return false
+        }
+        self.listening = tcp_server_listen(self.serverId, backlog)
+        return self.listening
+    }
+    
+    // 接受客户端连接，返回客户端socket_id
+    fn accept() {
+        if self.serverId == 0 || !self.listening {
+            return 0
+        }
+        return tcp_server_accept(self.serverId)
+    }
+    
+    // 接受连接并返回TcpClient对象
+    fn acceptClient() {
+        val clientId = self.accept()
+        if clientId == 0 {
+            return nil
+        }
+        
+        // 创建TcpClient包装
+        val client = TcpClient()
+        client.sockId = clientId
+        return client
+    }
+    
+    // 是否在监听
+    fn isListening() {
+        if self.serverId == 0 {
+            return false
+        }
+        return tcp_server_is_listening(self.serverId)
+    }
+    
+    // 关闭服务器
+    fn close() {
+        if self.serverId > 0 {
+            tcp_server_close(self.serverId)
+            self.serverId = 0
+            self.listening = false
+        }
+    }
+}
+
+// ==================== UDP 客户端类 ====================
+
+class UdpClient {
+    fn __init__() {
+        self.udpId = 0
+        self.localPort = 0
+    }
+    
+    // 打开UDP
+    fn open() {
+        self.udpId = udp_open()
+        return self.udpId > 0
+    }
+    
+    // 绑定本地端口
+    fn bind(port) {
+        if self.udpId == 0 {
+            self.open()
+        }
+        self.localPort = port
+        return udp_bind(self.udpId, port)
+    }
+    
+    // 发送数据
+    fn send(host, port, data) {
+        if self.udpId == 0 {
+            self.open()
+        }
+        return udp_send(self.udpId, host, port, data)
+    }
+    
+    // 接收数据
+    fn recv(size = 4096) {
+        if self.udpId == 0 {
+            return {"data": "", "host": "", "port": 0}
+        }
+        return udp_recv(self.udpId, size)
+    }
+    
+    // 关闭
+    fn close() {
+        if self.udpId > 0 {
+            udp_close(self.udpId)
+            self.udpId = 0
+        }
+    }
+}
+
+// ==================== DNS 工具函数 ====================
+
+// 解析域名为IP地址
+fn dnsResolve(hostname) {
+    return dns_resolve(hostname)
+}
+
+// 反向DNS解析（IP转域名）
+fn dnsReverse(ip) {
+    return dns_reverse(ip)
+}
+
+// 检查端口是否开放
+fn isPortOpen(host, port, timeout = 3000) {
+    return port_check(host, port, timeout)
+}
+
+// ==================== 便捷函数 ====================
+
+// 快速TCP请求（连接-发送-接收-关闭）
+fn tcpRequest(host, port, data, timeout = 30000) {
+    val client = TcpClient()
+    client.setTimeout(timeout)
+    
+    if !client.connect(host, port) {
+        return {"success": false, "error": "连接失败", "data": ""}
+    }
+    
+    if client.send(data) < 0 {
+        client.close()
+        return {"success": false, "error": "发送失败", "data": ""}
+    }
+    
+    val response = client.recvAll()
+    client.close()
+    
+    return {"success": true, "error": "", "data": response}
+}
+
+// 快速UDP发送
+fn udpSend(host, port, data) {
+    val client = UdpClient()
+    client.open()
+    val sent = client.send(host, port, data)
+    client.close()
+    return sent
+}
+
+// ==================== 网络工具类 ====================
+
+class NetUtils {
+    // 检查主机是否可达
+    fn isReachable(host, port = 80, timeout = 3000) {
+        return port_check(host, port, timeout)
+    }
+    
+    // 扫描端口范围
+    fn scanPorts(host, startPort, endPort, timeout = 1000) {
+        val openPorts = []
+        for val port = startPort; port <= endPort; port = port + 1 {
+            if port_check(host, port, timeout) {
+                openPorts = push(openPorts, port)
+            }
+        }
+        return openPorts
+    }
+    
+    // 获取主机信息
+    fn getHostInfo(hostname) {
+        val ip = dns_resolve(hostname)
+        if ip == "" {
+            return {"success": false, "hostname": hostname, "ip": ""}
+        }
+        return {"success": true, "hostname": hostname, "ip": ip}
+    }
+}
+
+// ==================== 简易HTTP客户端（基于TCP） ====================
+
+class RawHttpClient {
+    fn __init__() {
+        self.timeout = 30000
+        self.headers = {}
+    }
+    
+    fn setTimeout(ms) {
+        self.timeout = ms
+    }
+    
+    fn setHeader(key, value) {
+        self.headers[key] = value
+    }
+    
+    // 发送原始HTTP请求
+    fn request(host, port, method, path) {
+        val client = TcpClient()
+        client.setTimeout(self.timeout)
+        
+        if !client.connect(host, port) {
+            return {"success": false, "status": 0, "body": "", "error": "连接失败"}
+        }
+        
+        // 构建HTTP请求
+        val request = method + " " + path + " HTTP/1.1\r\n"
+        val hostHeader = "Host: " + host + "\r\n"
+        val connHeader = "Connection: close\r\n"
+        
+        // 添加自定义headers
+        val headerStr = ""
+        for val key in self.headers {
+            headerStr = headerStr + key + ": " + self.headers[key] + "\r\n"
+        }
+        
+        val fullRequest = request + hostHeader + connHeader + headerStr + "\r\n"
+        client.send(fullRequest)
+        
+        val response = client.recvAll()
+        client.close()
+        
+        // 解析响应
+        return self.parseResponse(response)
+    }
+    
+    fn parseResponse(raw) {
+        // 查找状态码
+        val statusPos = find(raw, " ")
+        if statusPos < 0 {
+            return {"success": false, "status": 0, "body": raw, "error": "解析失败"}
+        }
+        
+        // 简单提取状态码
+        val statusLine = substr(raw, 0, 20)
+        val statusStart = find(statusLine, " ") + 1
+        val statusEnd = find(statusLine, " ", statusStart)
+        val status = num(substr(statusLine, statusStart, 3))
+        
+        // 查找body（\r\n\r\n之后）
+        val bodyStart = find(raw, "\r\n\r\n")
+        val body = ""
+        if bodyStart >= 0 {
+            body = substr(raw, bodyStart + 4)
+        }
+        
+        return {"success": true, "status": status, "body": body, "error": ""}
+    }
+}
+
+// ==================== 服务器工具函数 ====================
+
+// 创建简单的TCP回显服务器
+fn createEchoServer(port, maxClients = 10) {
+    val server = TcpServer()
+    
+    if !server.bind(port) {
+        return {"success": false, "error": "绑定端口失败", "server": nil}
+    }
+    
+    if !server.listen(maxClients) {
+        return {"success": false, "error": "监听失败", "server": nil}
+    }
+    
+    return {"success": true, "error": "", "server": server}
+}

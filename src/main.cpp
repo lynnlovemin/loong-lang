@@ -63,7 +63,7 @@ std::string getAbsolutePath(const std::string& relativePath) {
 #endif
 
 void printUsage(const char* programName) {
-    std::cout << "Loong 编程语言 v1.0.0\n";
+    std::cout << "Loong 编程语言 v1.1.0\n";
     std::cout << "用法: " << programName << " [选项] <文件>\n\n";
     std::cout << "选项:\n";
     std::cout << "  -h, --help     显示帮助信息\n";

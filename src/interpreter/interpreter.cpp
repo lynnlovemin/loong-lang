@@ -3,6 +3,7 @@
 #include "parser/parser.hpp"
 #include "utils/error.hpp"
 #include "builtin/http.hpp"
+#include "builtin/socket.hpp"
 #include <iostream>
 #include <fstream>
 #include <sstream>
@@ -327,10 +328,48 @@ LoongValue Interpreter::visitBinaryExpr(BinaryExpr* expr) {
             break;
             
         case TokenType::AND:
+        case TokenType::AND_AND:  // &&
             return LoongValue::boolean(left.isTruthy() && right.isTruthy());
             
         case TokenType::OR:
+        case TokenType::OR_OR:  // ||
             return LoongValue::boolean(left.isTruthy() || right.isTruthy());
+        
+        // 位运算符
+        case TokenType::BITAND:  // &
+            if (left.isNumber() && right.isNumber()) {
+                return LoongValue::number((double)((long long)left.numberValue & (long long)right.numberValue));
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行位与运算");
+            break;
+            
+        case TokenType::BITOR:  // |
+            if (left.isNumber() && right.isNumber()) {
+                return LoongValue::number((double)((long long)left.numberValue | (long long)right.numberValue));
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行位或运算");
+            break;
+            
+        case TokenType::XOR:  // ^
+            if (left.isNumber() && right.isNumber()) {
+                return LoongValue::number((double)((long long)left.numberValue ^ (long long)right.numberValue));
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行异或运算");
+            break;
+            
+        case TokenType::LSHIFT:  // <<
+            if (left.isNumber() && right.isNumber()) {
+                return LoongValue::number((double)((long long)left.numberValue << (int)right.numberValue));
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行左移运算");
+            break;
+            
+        case TokenType::RSHIFT:  // >>
+            if (left.isNumber() && right.isNumber()) {
+                return LoongValue::number((double)((long long)left.numberValue >> (int)right.numberValue));
+            }
+            LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行右移运算");
+            break;
             
         default:
             break;
@@ -351,7 +390,15 @@ LoongValue Interpreter::visitUnaryExpr(UnaryExpr* expr) {
             break;
             
         case TokenType::NOT:
+        case TokenType::BANG:  // !
             return LoongValue::boolean(!right.isTruthy());
+            
+        case TokenType::BITNOT:  // ~
+            if (right.isNumber()) {
+                return LoongValue::number((double)(~(long long)right.numberValue));
+            }
+            LOONG_TYPE_ERROR("无法对 " + right.typeName() + " 进行位取反运算");
+            break;
             
         default:
             break;
@@ -2366,6 +2413,465 @@ void Interpreter::registerBuiltinFunctions() {
             }
             
             return LoongValue::string(result);
+        }
+    ));
+    
+    // ==================== 网络协议函数 ====================
+    
+    // TCP连接存储
+    static std::map<int, std::shared_ptr<Socket>> tcpSockets;
+    static int nextSocketId = 1;
+    
+    // tcp_connect(host, port) - 创建TCP连接
+    globals_->define("tcp_connect", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isNumber()) {
+                throw std::runtime_error("tcp_connect() 需要 host(string) 和 port(number) 参数");
+            }
+            
+            std::string host = args[0].stringValue;
+            int port = (int)args[1].numberValue;
+            
+            // 获取超时参数（可选）
+            int timeout = 30000;
+            if (args.size() > 2 && args[2].isNumber()) {
+                timeout = (int)args[2].numberValue;
+            }
+            
+            static std::map<int, std::shared_ptr<Socket>>& sockets = tcpSockets;
+            static int& nextId = nextSocketId;
+            
+            auto sock = std::make_shared<Socket>(SocketType::TCP);
+            sock->setTimeout(timeout);
+            
+            if (!sock->connect(host, port)) {
+                return LoongValue::number(0);
+            }
+            
+            int id = nextId++;
+            sockets[id] = sock;
+            
+            return LoongValue::number(id);
+        }
+    ));
+    
+    // tcp_send(socket_id, data) - 发送TCP数据
+    globals_->define("tcp_send", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isNumber() || !args[1].isString()) {
+                throw std::runtime_error("tcp_send() 需要 socket_id(number) 和 data(string) 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            std::string data = args[1].stringValue;
+            
+            static std::map<int, std::shared_ptr<Socket>>& sockets = tcpSockets;
+            
+            auto it = sockets.find(id);
+            if (it == sockets.end()) {
+                throw std::runtime_error("无效的socket id");
+            }
+            
+            int sent = it->second->send(data);
+            return LoongValue::number(sent);
+        }
+    ));
+    
+    // tcp_recv(socket_id, size) - 接收TCP数据
+    globals_->define("tcp_recv", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("tcp_recv() 需要 socket_id(number) 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            int size = 4096;
+            if (args.size() > 1 && args[1].isNumber()) {
+                size = (int)args[1].numberValue;
+            }
+            
+            static std::map<int, std::shared_ptr<Socket>>& sockets = tcpSockets;
+            
+            auto it = sockets.find(id);
+            if (it == sockets.end()) {
+                throw std::runtime_error("无效的socket id");
+            }
+            
+            std::string data = it->second->recv(size);
+            return LoongValue::string(data);
+        }
+    ));
+    
+    // tcp_recv_all(socket_id) - 接收所有TCP数据
+    globals_->define("tcp_recv_all", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("tcp_recv_all() 需要 socket_id(number) 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            int maxBytes = 1024 * 1024;
+            if (args.size() > 1 && args[1].isNumber()) {
+                maxBytes = (int)args[1].numberValue;
+            }
+            
+            static std::map<int, std::shared_ptr<Socket>>& sockets = tcpSockets;
+            
+            auto it = sockets.find(id);
+            if (it == sockets.end()) {
+                throw std::runtime_error("无效的socket id");
+            }
+            
+            std::string data = it->second->recvAll(maxBytes);
+            return LoongValue::string(data);
+        }
+    ));
+    
+    // tcp_close(socket_id) - 关闭TCP连接
+    globals_->define("tcp_close", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("tcp_close() 需要 socket_id(number) 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            
+            static std::map<int, std::shared_ptr<Socket>>& sockets = tcpSockets;
+            
+            auto it = sockets.find(id);
+            if (it != sockets.end()) {
+                it->second->close();
+                sockets.erase(it);
+                return LoongValue::boolean(true);
+            }
+            
+            return LoongValue::boolean(false);
+        }
+    ));
+    
+    // tcp_connected(socket_id) - 检查TCP连接状态
+    globals_->define("tcp_connected", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("tcp_connected() 需要 socket_id(number) 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            
+            static std::map<int, std::shared_ptr<Socket>>& sockets = tcpSockets;
+            
+            auto it = sockets.find(id);
+            if (it != sockets.end()) {
+                return LoongValue::boolean(it->second->isConnected());
+            }
+            
+            return LoongValue::boolean(false);
+        }
+    ));
+    
+    // ==================== TCP 服务器函数 ====================
+    static std::map<int, std::shared_ptr<TcpServer>> tcpServers;
+    static int nextServerId = 2000;
+    
+    // tcp_server_create() - 创建TCP服务器
+    globals_->define("tcp_server_create", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            static std::map<int, std::shared_ptr<TcpServer>>& servers = tcpServers;
+            static int& nextId = nextServerId;
+            
+            auto server = std::make_shared<TcpServer>();
+            int id = nextId++;
+            servers[id] = server;
+            
+            return LoongValue::number(id);
+        }
+    ));
+    
+    // tcp_server_bind(server_id, port) - 绑定端口
+    globals_->define("tcp_server_bind", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+                throw std::runtime_error("tcp_server_bind() 需要 server_id 和 port 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            int port = (int)args[1].numberValue;
+            
+            static std::map<int, std::shared_ptr<TcpServer>>& servers = tcpServers;
+            
+            auto it = servers.find(id);
+            if (it == servers.end()) {
+                throw std::runtime_error("无效的server id");
+            }
+            
+            bool success = it->second->bind(port);
+            return LoongValue::boolean(success);
+        }
+    ));
+    
+    // tcp_server_listen(server_id, backlog) - 开始监听
+    globals_->define("tcp_server_listen", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("tcp_server_listen() 需要 server_id 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            int backlog = 5;
+            if (args.size() > 1 && args[1].isNumber()) {
+                backlog = (int)args[1].numberValue;
+            }
+            
+            static std::map<int, std::shared_ptr<TcpServer>>& servers = tcpServers;
+            
+            auto it = servers.find(id);
+            if (it == servers.end()) {
+                throw std::runtime_error("无效的server id");
+            }
+            
+            bool success = it->second->listen(backlog);
+            return LoongValue::boolean(success);
+        }
+    ));
+    
+    // tcp_server_accept(server_id) - 接受连接，返回客户端socket_id
+    globals_->define("tcp_server_accept", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("tcp_server_accept() 需要 server_id 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            
+            static std::map<int, std::shared_ptr<TcpServer>>& servers = tcpServers;
+            static std::map<int, std::shared_ptr<Socket>>& sockets = tcpSockets;
+            static int& nextSocketIdRef = nextSocketId;
+            
+            auto it = servers.find(id);
+            if (it == servers.end()) {
+                throw std::runtime_error("无效的server id");
+            }
+            
+            Socket* client = it->second->accept();
+            if (client == nullptr) {
+                return LoongValue::number(0);
+            }
+            
+            // 将客户端socket存入管理map
+            int clientId = nextSocketIdRef++;
+            sockets[clientId] = std::shared_ptr<Socket>(client);
+            
+            return LoongValue::number(clientId);
+        }
+    ));
+    
+    // tcp_server_is_listening(server_id) - 检查是否在监听
+    globals_->define("tcp_server_is_listening", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("tcp_server_is_listening() 需要 server_id 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            
+            static std::map<int, std::shared_ptr<TcpServer>>& servers = tcpServers;
+            
+            auto it = servers.find(id);
+            if (it != servers.end()) {
+                return LoongValue::boolean(it->second->isListening());
+            }
+            
+            return LoongValue::boolean(false);
+        }
+    ));
+    
+    // tcp_server_close(server_id) - 关闭服务器
+    globals_->define("tcp_server_close", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("tcp_server_close() 需要 server_id 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            
+            static std::map<int, std::shared_ptr<TcpServer>>& servers = tcpServers;
+            
+            auto it = servers.find(id);
+            if (it != servers.end()) {
+                it->second->close();
+                servers.erase(it);
+                return LoongValue::boolean(true);
+            }
+            
+            return LoongValue::boolean(false);
+        }
+    ));
+    
+    // UDP发送
+    static std::map<int, std::shared_ptr<UdpClient>> udpClients;
+    static int nextUdpId = 1000;
+    
+    // udp_open() - 创建UDP客户端
+    globals_->define("udp_open", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            static std::map<int, std::shared_ptr<UdpClient>>& clients = udpClients;
+            static int& nextId = nextUdpId;
+            
+            auto client = std::make_shared<UdpClient>();
+            int id = nextId++;
+            clients[id] = client;
+            
+            return LoongValue::number(id);
+        }
+    ));
+    
+    // udp_send(udp_id, host, port, data) - 发送UDP数据
+    globals_->define("udp_send", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 4 || !args[0].isNumber() || !args[1].isString() || 
+                !args[2].isNumber() || !args[3].isString()) {
+                throw std::runtime_error("udp_send() 需要 udp_id, host, port, data 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            std::string host = args[1].stringValue;
+            int port = (int)args[2].numberValue;
+            std::string data = args[3].stringValue;
+            
+            static std::map<int, std::shared_ptr<UdpClient>>& clients = udpClients;
+            
+            auto it = clients.find(id);
+            if (it == clients.end()) {
+                throw std::runtime_error("无效的udp id");
+            }
+            
+            int sent = it->second->send(data, host, port);
+            return LoongValue::number(sent);
+        }
+    ));
+    
+    // udp_recv(udp_id, size) - 接收UDP数据
+    globals_->define("udp_recv", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("udp_recv() 需要 udp_id(number) 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            int size = 4096;
+            if (args.size() > 1 && args[1].isNumber()) {
+                size = (int)args[1].numberValue;
+            }
+            
+            static std::map<int, std::shared_ptr<UdpClient>>& clients = udpClients;
+            
+            auto it = clients.find(id);
+            if (it == clients.end()) {
+                throw std::runtime_error("无效的udp id");
+            }
+            
+            std::string senderHost;
+            int senderPort;
+            std::string data = it->second->recv(senderHost, senderPort, size);
+            
+            // 返回字典 {data, host, port}
+            std::map<std::string, LoongValue> result;
+            result["data"] = LoongValue::string(data);
+            result["host"] = LoongValue::string(senderHost);
+            result["port"] = LoongValue::number(senderPort);
+            
+            return LoongValue::dict(result);
+        }
+    ));
+    
+    // udp_bind(udp_id, port) - 绑定UDP端口
+    globals_->define("udp_bind", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+                throw std::runtime_error("udp_bind() 需要 udp_id 和 port 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            int port = (int)args[1].numberValue;
+            
+            static std::map<int, std::shared_ptr<UdpClient>>& clients = udpClients;
+            
+            auto it = clients.find(id);
+            if (it == clients.end()) {
+                throw std::runtime_error("无效的udp id");
+            }
+            
+            bool success = it->second->bind(port);
+            return LoongValue::boolean(success);
+        }
+    ));
+    
+    // udp_close(udp_id) - 关闭UDP
+    globals_->define("udp_close", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("udp_close() 需要 udp_id(number) 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            
+            static std::map<int, std::shared_ptr<UdpClient>>& clients = udpClients;
+            
+            auto it = clients.find(id);
+            if (it != clients.end()) {
+                it->second->close();
+                clients.erase(it);
+                return LoongValue::boolean(true);
+            }
+            
+            return LoongValue::boolean(false);
+        }
+    ));
+    
+    // dns_resolve(hostname) - DNS解析
+    globals_->define("dns_resolve", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("dns_resolve() 需要 hostname(string) 参数");
+            }
+            
+            std::string hostname = args[0].stringValue;
+            std::string ip = dnsResolve(hostname);
+            
+            return LoongValue::string(ip);
+        }
+    ));
+    
+    // dns_reverse(ip) - 反向DNS解析
+    globals_->define("dns_reverse", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("dns_reverse() 需要 ip(string) 参数");
+            }
+            
+            std::string ip = args[0].stringValue;
+            std::string hostname = dnsReverse(ip);
+            
+            return LoongValue::string(hostname);
+        }
+    ));
+    
+    // port_check(host, port) - 检查端口是否开放
+    globals_->define("port_check", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isNumber()) {
+                throw std::runtime_error("port_check() 需要 host(string) 和 port(number) 参数");
+            }
+            
+            std::string host = args[0].stringValue;
+            int port = (int)args[1].numberValue;
+            int timeout = 3000;
+            if (args.size() > 2 && args[2].isNumber()) {
+                timeout = (int)args[2].numberValue;
+            }
+            
+            bool open = isPortOpen(host, port, timeout);
+            return LoongValue::boolean(open);
         }
     ));
 }

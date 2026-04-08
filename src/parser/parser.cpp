@@ -331,7 +331,7 @@ ExprPtr Parser::parseAssignment() {
 ExprPtr Parser::parseOr() {
     ExprPtr expr = parseAnd();
     
-    while (match(TokenType::OR)) {
+    while (match(TokenType::OR) || match(TokenType::OR_OR)) {
         Token op = previous();
         ExprPtr right = parseAnd();
         expr = BinaryExpr::create(expr, op, right);
@@ -341,9 +341,48 @@ ExprPtr Parser::parseOr() {
 }
 
 ExprPtr Parser::parseAnd() {
+    ExprPtr expr = parseBitOr();
+    
+    while (match(TokenType::AND) || match(TokenType::AND_AND)) {
+        Token op = previous();
+        ExprPtr right = parseBitOr();
+        expr = BinaryExpr::create(expr, op, right);
+    }
+    
+    return expr;
+}
+
+// 位或 |
+ExprPtr Parser::parseBitOr() {
+    ExprPtr expr = parseBitXor();
+    
+    while (match(TokenType::BITOR)) {
+        Token op = previous();
+        ExprPtr right = parseBitXor();
+        expr = BinaryExpr::create(expr, op, right);
+    }
+    
+    return expr;
+}
+
+// 异或 ^
+ExprPtr Parser::parseBitXor() {
+    ExprPtr expr = parseBitAnd();
+    
+    while (match(TokenType::XOR)) {
+        Token op = previous();
+        ExprPtr right = parseBitAnd();
+        expr = BinaryExpr::create(expr, op, right);
+    }
+    
+    return expr;
+}
+
+// 位与 &
+ExprPtr Parser::parseBitAnd() {
     ExprPtr expr = parseEquality();
     
-    while (match(TokenType::AND)) {
+    while (match(TokenType::BITAND)) {
         Token op = previous();
         ExprPtr right = parseEquality();
         expr = BinaryExpr::create(expr, op, right);
@@ -365,10 +404,23 @@ ExprPtr Parser::parseEquality() {
 }
 
 ExprPtr Parser::parseComparison() {
-    ExprPtr expr = parseTerm();
+    ExprPtr expr = parseShift();
     
     while (match(TokenType::LESS) || match(TokenType::LESS_EQUAL) ||
            match(TokenType::GREATER) || match(TokenType::GREATER_EQUAL)) {
+        Token op = previous();
+        ExprPtr right = parseShift();
+        expr = BinaryExpr::create(expr, op, right);
+    }
+    
+    return expr;
+}
+
+// 位移 << >>
+ExprPtr Parser::parseShift() {
+    ExprPtr expr = parseTerm();
+    
+    while (match(TokenType::LSHIFT) || match(TokenType::RSHIFT)) {
         Token op = previous();
         ExprPtr right = parseTerm();
         expr = BinaryExpr::create(expr, op, right);
@@ -402,7 +454,8 @@ ExprPtr Parser::parseFactor() {
 }
 
 ExprPtr Parser::parseUnary() {
-    if (match(TokenType::NOT) || match(TokenType::MINUS)) {
+    if (match(TokenType::NOT) || match(TokenType::BANG) || 
+        match(TokenType::MINUS) || match(TokenType::BITNOT)) {
         Token op = previous();
         ExprPtr right = parseUnary();
         return UnaryExpr::create(op, right);

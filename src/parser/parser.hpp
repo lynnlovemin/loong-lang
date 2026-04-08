@@ -48,8 +48,12 @@ private:
     ExprPtr parseAssignment();
     ExprPtr parseOr();
     ExprPtr parseAnd();
+    ExprPtr parseBitOr();
+    ExprPtr parseBitXor();
+    ExprPtr parseBitAnd();
     ExprPtr parseEquality();
     ExprPtr parseComparison();
+    ExprPtr parseShift();
     ExprPtr parseTerm();
     ExprPtr parseFactor();
     ExprPtr parseUnary();
