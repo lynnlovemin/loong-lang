@@ -72,6 +72,8 @@ std::string LoongValue::toString() const {
             return formatNumber(numberValue);
         case ValueType::BIGINT:
             return bigintValue.toString();
+        case ValueType::CHAR:
+            return std::string(1, charValue);
         case ValueType::STRING:
             return stringValue;
         case ValueType::LIST: {

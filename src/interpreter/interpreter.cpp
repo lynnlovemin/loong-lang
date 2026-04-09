@@ -26,13 +26,40 @@ static BigInteger toBigInteger(const LoongValue& v) {
         return v.bigintValue;
     } else if (v.isNumber()) {
         return BigInteger(static_cast<long long>(v.numberValue));
+    } else if (v.isChar()) {
+        return BigInteger(static_cast<long long>(static_cast<unsigned char>(v.charValue)));
     }
     return BigInteger(0);
+}
+
+// 将 LoongValue 转换为 double（支持 CHAR）
+static double toNumber(const LoongValue& v) {
+    if (v.isNumber()) {
+        return v.numberValue;
+    } else if (v.isBigint()) {
+        return v.bigintValue.toDouble();
+    } else if (v.isChar()) {
+        return static_cast<double>(static_cast<unsigned char>(v.charValue));
+    }
+    return 0;
+}
+
+// 将 LoongValue 转换为整数（用于运算）
+static LoongValue toNumericValue(const LoongValue& v) {
+    if (v.isChar()) {
+        return LoongValue::number(static_cast<double>(static_cast<unsigned char>(v.charValue)));
+    }
+    return v;
 }
 
 // 检查是否为数值类型（NUMBER 或 BIGINT）
 static bool isNumeric(const LoongValue& v) {
     return v.isNumber() || v.isBigint();
+}
+
+// 检查是否为数值或字符类型
+static bool isNumericOrChar(const LoongValue& v) {
+    return v.isNumber() || v.isBigint() || v.isChar();
 }
 
 // 执行加法运算（支持 NUMBER 和 BIGINT）
@@ -121,6 +148,12 @@ static LoongValue moduloValues(const LoongValue& left, const LoongValue& right) 
     if ((right.isBigint() && right.bigintValue.isZero()) ||
         (right.isNumber() && right.numberValue == 0)) {
         throw std::runtime_error("模零错误");
+    }
+    // 对于普通数字和字符，使用简单的整数取模
+    if (!left.isBigint() && !right.isBigint()) {
+        long long leftVal = static_cast<long long>(toNumber(left));
+        long long rightVal = static_cast<long long>(toNumber(right));
+        return LoongValue::number(static_cast<double>(leftVal % rightVal));
     }
     return LoongValue::bigint(toBigInteger(left) % toBigInteger(right));
 }
@@ -220,6 +253,8 @@ LoongValue Interpreter::visitLiteralExpr(LiteralExpr* expr) {
             return LoongValue::number(expr->numberValue);
         case LiteralExpr::LiteralType::BIGINT:
             return LoongValue::bigint(expr->bigintString);
+        case LiteralExpr::LiteralType::CHAR:
+            return LoongValue::charVal(expr->charValue);
         case LiteralExpr::LiteralType::STRING:
             return LoongValue::string(expr->stringValue);
         default:
@@ -240,10 +275,14 @@ LoongValue Interpreter::visitBinaryExpr(BinaryExpr* expr) {
     LoongValue left = evaluate(expr->left);
     LoongValue right = evaluate(expr->right);
     
+    // 如果任一操作数是字符，先转换为数值进行运算
+    LoongValue leftNum = toNumericValue(left);
+    LoongValue rightNum = toNumericValue(right);
+    
     switch (expr->op.type) {
         case TokenType::PLUS:
-            if (isNumeric(left) && isNumeric(right)) {
-                return addValues(left, right);
+            if (isNumericOrChar(left) && isNumericOrChar(right)) {
+                return addValues(leftNum, rightNum);
             }
             if (left.isString() || right.isString()) {
                 return LoongValue::string(left.toString() + right.toString());
@@ -252,29 +291,29 @@ LoongValue Interpreter::visitBinaryExpr(BinaryExpr* expr) {
             break;
             
         case TokenType::MINUS:
-            if (isNumeric(left) && isNumeric(right)) {
-                return subtractValues(left, right);
+            if (isNumericOrChar(left) && isNumericOrChar(right)) {
+                return subtractValues(leftNum, rightNum);
             }
             LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行减法运算");
             break;
             
         case TokenType::STAR:
-            if (isNumeric(left) && isNumeric(right)) {
-                return multiplyValues(left, right);
+            if (isNumericOrChar(left) && isNumericOrChar(right)) {
+                return multiplyValues(leftNum, rightNum);
             }
-            if (left.isString() && isNumeric(right)) {
-                return left * right;
+            if (left.isString() && isNumericOrChar(right)) {
+                return left * rightNum;
             }
-            if (isNumeric(left) && right.isString()) {
-                return right * left;
+            if (isNumericOrChar(left) && right.isString()) {
+                return right * leftNum;
             }
             LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行乘法运算");
             break;
             
         case TokenType::SLASH:
-            if (isNumeric(left) && isNumeric(right)) {
+            if (isNumericOrChar(left) && isNumericOrChar(right)) {
                 try {
-                    return divideValues(left, right);
+                    return divideValues(leftNum, rightNum);
                 } catch (const std::runtime_error& e) {
                     LOONG_RUNTIME_ERROR(e.what());
                 }
@@ -283,9 +322,9 @@ LoongValue Interpreter::visitBinaryExpr(BinaryExpr* expr) {
             break;
             
         case TokenType::PERCENT:
-            if (isNumeric(left) && isNumeric(right)) {
+            if (isNumericOrChar(left) && isNumericOrChar(right)) {
                 try {
-                    return moduloValues(left, right);
+                    return moduloValues(leftNum, rightNum);
                 } catch (const std::runtime_error& e) {
                     LOONG_RUNTIME_ERROR(e.what());
                 }
@@ -300,29 +339,29 @@ LoongValue Interpreter::visitBinaryExpr(BinaryExpr* expr) {
             return LoongValue::boolean(left != right);
             
         case TokenType::LESS:
-            if (isNumeric(left) && isNumeric(right)) {
-                return LoongValue::boolean(compareLess(left, right));
+            if (isNumericOrChar(left) && isNumericOrChar(right)) {
+                return LoongValue::boolean(compareLess(leftNum, rightNum));
             }
             LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行比较");
             break;
             
         case TokenType::LESS_EQUAL:
-            if (isNumeric(left) && isNumeric(right)) {
-                return LoongValue::boolean(compareLessEqual(left, right));
+            if (isNumericOrChar(left) && isNumericOrChar(right)) {
+                return LoongValue::boolean(compareLessEqual(leftNum, rightNum));
             }
             LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行比较");
             break;
             
         case TokenType::GREATER:
-            if (isNumeric(left) && isNumeric(right)) {
-                return LoongValue::boolean(compareGreater(left, right));
+            if (isNumericOrChar(left) && isNumericOrChar(right)) {
+                return LoongValue::boolean(compareGreater(leftNum, rightNum));
             }
             LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行比较");
             break;
             
         case TokenType::GREATER_EQUAL:
-            if (isNumeric(left) && isNumeric(right)) {
-                return LoongValue::boolean(compareGreaterEqual(left, right));
+            if (isNumericOrChar(left) && isNumericOrChar(right)) {
+                return LoongValue::boolean(compareGreaterEqual(leftNum, rightNum));
             }
             LOONG_TYPE_ERROR("无法对 " + left.typeName() + " 和 " + right.typeName() + " 进行比较");
             break;
@@ -2119,6 +2158,10 @@ void Interpreter::registerBuiltinFunctions() {
             if (args[0].isNumber()) {
                 return LoongValue::number(static_cast<double>(static_cast<long long>(args[0].numberValue)));
             }
+            if (args[0].isChar()) {
+                // 将字符转换为ASCII码
+                return LoongValue::number(static_cast<double>(static_cast<unsigned char>(args[0].charValue)));
+            }
             if (args[0].isString()) {
                 try {
                     return LoongValue::number(static_cast<double>(std::stoll(args[0].stringValue)));
@@ -2127,6 +2170,28 @@ void Interpreter::registerBuiltinFunctions() {
                 }
             }
             return LoongValue::number(0);
+        }
+    ));
+    
+    // chr - 将整数转换为ASCII字符
+    globals_->define("chr", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty()) {
+                throw std::runtime_error("chr() 需要一个整数参数");
+            }
+            int code = 0;
+            if (args[0].isNumber()) {
+                code = static_cast<int>(args[0].numberValue);
+            } else if (args[0].isBigint()) {
+                code = static_cast<int>(args[0].bigintValue.toDouble());
+            } else {
+                throw std::runtime_error("chr() 参数必须是整数");
+            }
+            // 检查是否在有效范围内
+            if (code < 0 || code > 127) {
+                throw std::runtime_error("chr() 参数必须在0-127范围内");
+            }
+            return LoongValue::charVal(static_cast<char>(code));
         }
     ));
     

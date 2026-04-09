@@ -506,6 +506,10 @@ ExprPtr Parser::parsePrimary() {
     if (match(TokenType::STRING)) {
         return LiteralExpr::createString(previous().value, previous().line, previous().column);
     }
+    if (match(TokenType::CHAR)) {
+        char ch = previous().value.empty() ? '\0' : previous().value[0];
+        return LiteralExpr::createChar(ch, previous().line, previous().column);
+    }
     if (match(TokenType::IDENTIFIER)) {
         return IdentifierExpr::create(previous().value, previous().line, previous().column);
     }

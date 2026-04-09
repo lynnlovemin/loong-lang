@@ -152,6 +152,47 @@ void Lexer::scanString() {
     addToken(TokenType::STRING, value);
 }
 
+void Lexer::scanChar() {
+    // 支持转义字符的单引号字符
+    char value = '\0';
+    
+    if (isAtEnd()) {
+        LOONG_LEXER_ERROR("未闭合的字符", line_, tokenColumn_);
+    }
+    
+    if (peek() == '\'') {
+        // 空字符 ''
+        LOONG_LEXER_ERROR("空字符字面量", line_, tokenColumn_);
+    }
+    
+    if (peek() == '\\') {
+        // 转义字符
+        advance();
+        if (!isAtEnd()) {
+            char escaped = peek();
+            switch (escaped) {
+                case 'n': value = '\n'; break;
+                case 't': value = '\t'; break;
+                case 'r': value = '\r'; break;
+                case '\\': value = '\\'; break;
+                case '\'': value = '\''; break;
+                case '0': value = '\0'; break;
+                default: value = escaped; break;
+            }
+            advance();
+        }
+    } else {
+        value = advance();
+    }
+    
+    if (isAtEnd() || peek() != '\'') {
+        LOONG_LEXER_ERROR("未闭合的字符", line_, tokenColumn_);
+    }
+    
+    advance(); // 消耗闭合的 '
+    addToken(TokenType::CHAR, std::string(1, value));
+}
+
 void Lexer::scanNumber() {
     // 注意：scanToken 已经消耗了第一个字符（数字）
     // 获取第一个数字字符
@@ -382,6 +423,9 @@ void Lexer::scanToken() {
         
         // 字符串
         case '"': scanString(); break;
+        
+        // 字符
+        case '\'': scanChar(); break;
         
         // 空白字符处理（跳过）
         case ' ':

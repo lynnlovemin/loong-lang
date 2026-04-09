@@ -1,4 +1,4 @@
-# Loong 编程语言 v1.2.1
+# Loong 编程语言 v1.2.2
 
 ## 简介
 
@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](loong-1.2.1-setup.exe)** (v1.2.1)
+📥 **[下载 Windows 安装包](loong-1.2.2-setup.exe)** (v1.2.2)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
@@ -98,6 +98,30 @@ val version = 1.0;
 val flag = true;
 val list = [1, 2, 3];
 val dict = {"key": "value"};
+val ch = 'A';  // 字符类型
+```
+
+### 字符类型和ASCII码
+```loong
+// 字符字面量
+val c1 = 'A';
+val c2 = '\n';  // 转义字符
+val c3 = '\t';  // 制表符
+
+// 字符与整数运算（自动转换为ASCII码）
+val result = 'A' + 1;    // 结果为66
+val diff = 'Z' - 'A';    // 结果为25
+
+// int函数：字符转ASCII码
+val code = int('A');     // 结果为65
+
+// chr函数：整数转字符
+val letter = chr(65);    // 结果为 'A'
+
+// 比较字符
+if 'a' < 'z' {
+    println("'a' 小于 'z'");
+}
 ```
 
 ### 函数定义
@@ -279,7 +303,8 @@ val text = html_text(html);    // 提取纯文本
 - `str(x)` - 转字符串
 - `num(x)` - 转数字
 - `bool(x)` - 转布尔值
-- `int(x)` - 转整数
+- `int(x)` - 转整数（支持字符转ASCII码）
+- `chr(x)` - 将整数转换为ASCII字符
 
 ### 类型判断
 - `is_null(x)` - 判断是否为nil
@@ -544,7 +569,8 @@ loong/
 - [ ] 并行处理
 - [x] 网络协议（HTTP、TCP、UDP、Socket）
 - [ ] 数据库驱动（MySQL）
-- [ ] ASCII码支持
+- [x] ASCII码支持
+- [x] 字符类型
 - [x] 二进制（0b开头）、十六进制（0x开头）和八进制的支持（0开头）
 
 ## 许可证

@@ -50,6 +50,7 @@ enum class ValueType {
     BOOL,
     NUMBER,
     BIGINT,  // 大整数
+    CHAR,    // 字符
     STRING,
     LIST,
     DICT,
@@ -68,6 +69,7 @@ struct LoongValue {
     bool boolValue;
     double numberValue;
     BigInteger bigintValue;  // 大整数
+    char charValue;          // 字符
     std::string stringValue;
     std::vector<LoongValue> listValue;
     std::map<std::string, LoongValue> dictValue;
@@ -78,7 +80,7 @@ struct LoongValue {
     std::shared_ptr<BoundMethod> boundMethodValue;  // 改名避免与函数冲突
     
     // 构造函数
-    LoongValue() : type(ValueType::NIL), boolValue(false), numberValue(0), bigintValue(0) {}
+    LoongValue() : type(ValueType::NIL), boolValue(false), numberValue(0), bigintValue(0), charValue('\0') {}
     
     // 静态工厂方法
     static LoongValue nil() {
@@ -119,6 +121,13 @@ struct LoongValue {
         LoongValue v;
         v.type = ValueType::BIGINT;
         v.bigintValue = BigInteger(value);
+        return v;
+    }
+        
+    static LoongValue charVal(char value) {
+        LoongValue v;
+        v.type = ValueType::CHAR;
+        v.charValue = value;
         return v;
     }
     
@@ -183,7 +192,9 @@ struct LoongValue {
     bool isBool() const { return type == ValueType::BOOL; }
     bool isNumber() const { return type == ValueType::NUMBER; }
     bool isBigint() const { return type == ValueType::BIGINT; }
+    bool isChar() const { return type == ValueType::CHAR; }
     bool isNumeric() const { return type == ValueType::NUMBER || type == ValueType::BIGINT; }
+    bool isCharOrNumeric() const { return type == ValueType::NUMBER || type == ValueType::BIGINT || type == ValueType::CHAR; }
     bool isString() const { return type == ValueType::STRING; }
     bool isList() const { return type == ValueType::LIST; }
     bool isDict() const { return type == ValueType::DICT; }
@@ -201,6 +212,7 @@ struct LoongValue {
             case ValueType::BOOL: return boolValue;
             case ValueType::NUMBER: return numberValue != 0;
             case ValueType::BIGINT: return !bigintValue.isZero();
+            case ValueType::CHAR: return charValue != '\0';
             case ValueType::STRING: return !stringValue.empty();
             case ValueType::LIST: return !listValue.empty();
             case ValueType::DICT: return !dictValue.empty();
@@ -221,6 +233,7 @@ struct LoongValue {
             case ValueType::BOOL: return "bool";
             case ValueType::NUMBER: return "number";
             case ValueType::BIGINT: return "bigint";
+            case ValueType::CHAR: return "char";
             case ValueType::STRING: return "string";
             case ValueType::LIST: return "list";
             case ValueType::DICT: return "dict";
@@ -293,8 +306,13 @@ inline bool operator==(const LoongValue& a, const LoongValue& b) {
         }
     }
     
-    if (a.type != b.type) return false;
+    // 处理 CHAR 类型比较
+    if (a.isChar() && b.isChar()) {
+        return a.charValue == b.charValue;
+    }
     
+    if (a.type != b.type) return false;
+
     switch (a.type) {
         case ValueType::NIL: return true;
         case ValueType::BOOL: return a.boolValue == b.boolValue;

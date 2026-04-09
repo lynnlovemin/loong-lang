@@ -39,10 +39,11 @@ public:
 // 字面量表达式
 class LiteralExpr : public Expr {
 public:
-    enum class LiteralType { NIL, BOOL, NUMBER, BIGINT, STRING };
+    enum class LiteralType { NIL, BOOL, NUMBER, BIGINT, STRING, CHAR };
     LiteralType literalType;
     double numberValue;
     std::string stringValue;
+    char charValue;  // 字符值
     std::string bigintString;  // 存储大整数的字符串形式
     bool boolValue;
     
@@ -85,6 +86,15 @@ public:
         auto expr = std::make_shared<LiteralExpr>();
         expr->literalType = LiteralType::STRING;
         expr->stringValue = value;
+        expr->line = line;
+        expr->column = column;
+        return expr;
+    }
+    
+    static ExprPtr createChar(char value, int line = 1, int column = 1) {
+        auto expr = std::make_shared<LiteralExpr>();
+        expr->literalType = LiteralType::CHAR;
+        expr->charValue = value;
         expr->line = line;
         expr->column = column;
         return expr;

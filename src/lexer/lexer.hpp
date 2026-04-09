@@ -31,6 +31,7 @@ private:
     // 扫描方法
     void scanToken();
     void scanString();
+    void scanChar();
     void scanNumber();
     void scanIdentifier();
     void skipWhitespace();

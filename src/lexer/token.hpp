@@ -8,15 +8,16 @@
 namespace loong {
 
 enum class TokenType {
-    // 字面量
+    // 字面
     NUMBER,         // 数字 (整数和浮点数)
     BIGINT,         // 大整数
     STRING,         // 字符串
+    CHAR,           // 字符
     TRUE,           // true
     FALSE,          // false
     NIL,            // nil
 
-    // 标识符和关键字
+    // 标识符和关键词
     IDENTIFIER,     // 标识符
     VAL,            // val
     FN,             // fn
@@ -43,7 +44,7 @@ enum class TokenType {
     THIS,           // this
     SUPER,          // super
 
-    // 运算符
+    // 运算符号
     PLUS,           // +
     MINUS,          // -
     STAR,           // *
@@ -110,6 +111,7 @@ struct Token {
             case TokenType::NUMBER: return "NUMBER";
             case TokenType::BIGINT: return "BIGINT";
             case TokenType::STRING: return "STRING";
+            case TokenType::CHAR: return "CHAR";
             case TokenType::TRUE: return "TRUE";
             case TokenType::FALSE: return "FALSE";
             case TokenType::NIL: return "NIL";
