@@ -61,6 +61,48 @@ public:
         trim();
     }
     
+    // 从指定进制的字符串构造（支持2-16进制）
+    BigInteger(const std::string& s, int base) : negative(false) {
+        if (base < 2 || base > 16) {
+            digits = "0";
+            return;
+        }
+        
+        std::string numStr = s;
+        if (!numStr.empty() && numStr[0] == '-') {
+            negative = true;
+            numStr = numStr.substr(1);
+        } else if (!numStr.empty() && numStr[0] == '+') {
+            numStr = numStr.substr(1);
+        }
+        
+        // 转换为大写以便处理十六进制
+        for (auto& c : numStr) {
+            c = std::toupper(c);
+        }
+        
+        // 将指定进制转换为十进制
+        BigInteger result(0);
+        BigInteger baseBigInt(base);
+        
+        for (char c : numStr) {
+            int digit;
+            if (c >= '0' && c <= '9') {
+                digit = c - '0';
+            } else if (c >= 'A' && c <= 'F') {
+                digit = c - 'A' + 10;
+            } else {
+                continue; // 忽略非法字符
+            }
+            
+            result = result * baseBigInt + BigInteger(digit);
+        }
+        
+        digits = result.digits;
+        negative = negative || result.negative;
+        trim();
+    }
+    
     // 比较绝对值大小
     int compareAbs(const BigInteger& other) const {
         if (digits.size() != other.digits.size()) {

@@ -1,5 +1,6 @@
 #include "lexer.hpp"
 #include "utils/error.hpp"
+#include "interpreter/bigint.hpp"
 #include <cctype>
 #include <sstream>
 
@@ -152,11 +153,116 @@ void Lexer::scanString() {
 }
 
 void Lexer::scanNumber() {
+    // 注意：scanToken 已经消耗了第一个字符（数字）
+    // 获取第一个数字字符
+    char firstDigit = source_[current_ - 1];
+    
+    // 如果第一个字符是 '0'，检查是否是二进制、十六进制或八进制
+    if (firstDigit == '0') {
+        char next = peek();
+        
+        // 二进制: 0b 或 0B 开头
+        if (next == 'b' || next == 'B') {
+            advance(); // 消耗 'b' 或 'B'
+            
+            std::string binaryStr;
+            while (!isAtEnd()) {
+                char c = peek();
+                if (c == '0' || c == '1') {
+                    binaryStr += c;
+                    advance();
+                } else if (c == '_') {
+                    advance(); // 忽略下划线分隔符
+                } else {
+                    break;
+                }
+            }
+            
+            if (binaryStr.empty()) {
+                LOONG_LEXER_ERROR("二进制数字必须包含至少一位数字", line_, tokenColumn_);
+            }
+            
+            // 将二进制字符串转换为十进制字符串
+            unsigned long long value = 0;
+            for (char c : binaryStr) {
+                value = value * 2 + (c - '0');
+            }
+            addToken(TokenType::NUMBER, std::to_string(value));
+            return;
+        }
+        
+        // 十六进制: 0x 或 0X 开头
+        if (next == 'x' || next == 'X') {
+            advance(); // 消耗 'x' 或 'X'
+            
+            std::string hexStr;
+            while (!isAtEnd()) {
+                char c = peek();
+                if (std::isxdigit(c)) {
+                    hexStr += c;
+                    advance();
+                } else if (c == '_') {
+                    advance(); // 忽略下划线分隔符
+                } else {
+                    break;
+                }
+            }
+            
+            if (hexStr.empty()) {
+                LOONG_LEXER_ERROR("十六进制数字必须包含至少一位数字", line_, tokenColumn_);
+            }
+            
+            // 将十六进制字符串转换为十进制字符串
+            // 对于长十六进制数，使用 BIGINT
+            if (hexStr.length() > 15) {
+                BigInteger value(hexStr, 16);
+                addToken(TokenType::BIGINT, value.toString());
+            } else {
+                unsigned long long value = std::stoull(hexStr, nullptr, 16);
+                addToken(TokenType::NUMBER, std::to_string(value));
+            }
+            return;
+        }
+        
+        // 八进制: 0 开头，后面跟 0-7 的数字
+        if (std::isdigit(next) && next != '8' && next != '9') {
+            std::string octalStr = "0";
+            while (!isAtEnd()) {
+                char c = peek();
+                if (c >= '0' && c <= '7') {
+                    octalStr += c;
+                    advance();
+                } else if (c == '_') {
+                    advance(); // 忽略下划线分隔符
+                } else if (std::isdigit(c)) {
+                    // 8 或 9 在八进制中是非法的
+                    LOONG_LEXER_ERROR("八进制数字不能包含 8 或 9", line_, tokenColumn_);
+                } else {
+                    break;
+                }
+            }
+            
+            // 将八进制字符串转换为十进制字符串
+            unsigned long long value = 0;
+            for (char c : octalStr) {
+                value = value * 8 + (c - '0');
+            }
+            addToken(TokenType::NUMBER, std::to_string(value));
+            return;
+        }
+        
+        // 如果 0 后面是 8 或 9，这是非法的（以0开头的应该是八进制）
+        if (std::isdigit(next) && (next == '8' || next == '9')) {
+            LOONG_LEXER_ERROR("八进制数字不能包含 8 或 9", line_, tokenColumn_);
+        }
+    }
+    
+    // 十进制数字（包括 0 开头的十进制如 08, 09, 或 1-9 开头的数字）
     while (!isAtEnd() && std::isdigit(peek())) {
         advance();
     }
-
-    // 保存整数部分的起始位置
+    
+    // 保存整数部分的结束位置
     size_t intPartEnd = current_;
     
     // 处理小数部分
