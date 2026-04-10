@@ -1,4 +1,4 @@
-// Loong 网络协议标准库 v1.1.0
+// Loong 网络协议标准库 v1.2.3
 // 提供 TCP/UDP/Socket 网络编程支持
 
 // ==================== TCP 客户端类 ====================
@@ -38,6 +38,14 @@ class TcpClient {
             return ""
         }
         return tcp_recv(self.sockId, size)
+    }
+    
+    // 精确接收指定字节数的数据
+    fn recvExact(size) {
+        if self.sockId == 0 {
+            return ""
+        }
+        return tcp_recv_exact(self.sockId, size)
     }
     
     // 接收所有数据

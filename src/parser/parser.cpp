@@ -160,34 +160,17 @@ StmtPtr Parser::parseIfStmt() {
     
     std::vector<StmtPtr> elseBranch;
     
-    // 处理 elif
+    // 收集所有elif条件和分支
+    std::vector<std::pair<ExprPtr, std::vector<StmtPtr>>> elifChain;
+    
     while (match(TokenType::ELIF)) {
         ExprPtr elifCond = parseExpression();
         consume(TokenType::LBRACE, "期望 '{'");
         auto elifBody = parseBlock();
-        
-        // 将 elif 转换为嵌套的 if-else
-        auto innerIf = IfStmt::create(elifCond, elifBody, {}, peek().line, peek().column);
-        elseBranch = {innerIf};
-        
-        if (!match(TokenType::ELSE)) {
-            break;
-        }
-        
-        if (match(TokenType::IF)) {
-            // else if 的情况，继续处理
-            ExprPtr elseIfCond = parseExpression();
-            consume(TokenType::LBRACE, "期望 '{'");
-            auto elseIfBody = parseBlock();
-            auto elseIfStmt = IfStmt::create(elseIfCond, elseIfBody, {}, peek().line, peek().column);
-            elseBranch.push_back(elseIfStmt);
-            break;
-        } else {
-            consume(TokenType::LBRACE, "期望 '{'");
-            elseBranch = parseBlock();
-        }
+        elifChain.push_back({elifCond, elifBody});
     }
     
+    // 处理 else
     if (match(TokenType::ELSE)) {
         if (match(TokenType::IF)) {
             // else if
@@ -197,6 +180,14 @@ StmtPtr Parser::parseIfStmt() {
             consume(TokenType::LBRACE, "期望 '{'");
             elseBranch = parseBlock();
         }
+    }
+    
+    // 从后往前构建elif嵌套链（将elif转换为嵌套的if-else）
+    // if A {} elif B {} elif C {} else {} → if A {} else { if B {} else { if C {} else {} } }
+    for (int i = static_cast<int>(elifChain.size()) - 1; i >= 0; --i) {
+        auto innerIf = IfStmt::create(elifChain[i].first, elifChain[i].second, elseBranch,
+                                       elifChain[i].first->line, elifChain[i].first->column);
+        elseBranch = {innerIf};
     }
     
     return IfStmt::create(condition, thenBranch, elseBranch, condition->line, condition->column);

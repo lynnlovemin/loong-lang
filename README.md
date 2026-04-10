@@ -1,4 +1,4 @@
-# Loong 编程语言 v1.2.2
+# Loong 编程语言 v1.2.3
 
 ## 简介
 
@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](loong-1.2.2-setup.exe)** (v1.2.2)
+📥 **[下载 Windows 安装包](loong-1.2.3-setup.exe)** (v1.2.3)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
@@ -359,6 +359,28 @@ val text = html_text(html);    // 提取纯文本
 - `insert(list, index, item)` - 插入元素
 - `remove_at(list, index)` - 删除指定索引元素
 
+### 列表/字典/字符串方法
+列表方法：
+- `list.push(item)` - 添加元素到末尾
+- `list.pop()` - 弹出末尾元素
+- `list.insert(index, item)` - 在指定位置插入元素
+- `list.remove(index)` - 删除指定位置元素
+- `list.join(sep?)` - 连接为字符串
+
+字典方法：
+- `dict.keys()` - 获取所有键的列表
+- `dict.values()` - 获取所有值的列表
+- `dict.has(key)` - 检查键是否存在
+- `dict.remove(key)` - 删除指定键
+
+字符串方法：
+- `str.contains(substr)` - 检查是否包含子串
+- `str.startsWith(prefix)` - 检查前缀
+- `str.endsWith(suffix)` - 检查后缀
+- `str.replace(old, new)` - 替换子串
+- `str.split(sep?)` - 分割字符串
+- `str.trim()` - 去除首尾空白
+
 ### 文件IO
 - `file_read(path)` - 读取文件内容
 - `file_write(path, content)` - 写入文件
@@ -478,6 +500,7 @@ if server.bind(8080) && server.listen(5) {
 | `tcp_connect(host, port, timeout?)` | 创建TCP连接，返回socket_id |
 | `tcp_send(socket_id, data)` | 发送TCP数据 |
 | `tcp_recv(socket_id, size?)` | 接收TCP数据 |
+| `tcp_recv_exact(socket_id, size)` | 精确接收指定字节数的TCP数据 |
 | `tcp_recv_all(socket_id, maxBytes?)` | 接收所有TCP数据 |
 | `tcp_close(socket_id)` | 关闭TCP连接 |
 | `tcp_connected(socket_id)` | 检查TCP连接状态 |
@@ -494,6 +517,31 @@ if server.bind(8080) && server.listen(5) {
 | `dns_resolve(hostname)` | DNS解析（域名→IP） |
 | `dns_reverse(ip)` | 反向DNS解析（IP→域名） |
 | `port_check(host, port, timeout?)` | 检查端口是否开放 |
+
+#### 二进制数据处理函数
+| 函数 | 说明 |
+|------|------|
+| `bytes_len(data)` | 获取二进制数据的字节长度 |
+| `bytes_get(data, offset)` | 获取指定偏移处的字节值(0-255) |
+| `bytes_set(data, offset, value)` | 设置指定偏移处的字节值，返回新数据 |
+| `bytes_get_int16(data, offset)` | 读取小端16位整数 |
+| `bytes_get_int24(data, offset)` | 读取小端24位整数 |
+| `bytes_get_int32(data, offset)` | 读取小端32位整数 |
+| `bytes_from_int8(value)` | 将整数转换为1字节字符串 |
+| `bytes_from_int16(value)` | 将整数转换为小端2字节字符串 |
+| `bytes_from_int24(value)` | 将整数转换为小端3字节字符串 |
+| `bytes_from_int32(value)` | 将整数转换为小端4字节字符串 |
+| `bytes_to_hex(data)` | 将二进制数据转换为十六进制字符串 |
+| `bytes_from_hex(hex)` | 将十六进制字符串转换为二进制数据 |
+| `bytes_concat(data1, data2)` | 连接两个二进制数据 |
+| `bytes_substr(data, start, len?)` | 截取二进制数据的子串 |
+| `bytes_null()` | 返回一个null字节 |
+| `bytes_xor(data1, data2)` | 对两个字节数组进行XOR运算 |
+
+#### 哈希函数
+| 函数 | 说明 |
+|------|------|
+| `sha1(data)` | 计算SHA1哈希，返回20字节二进制数据 |
 
 ## 包管理器
 
@@ -572,6 +620,10 @@ loong/
 - [x] ASCII码支持
 - [x] 字符类型
 - [x] 二进制（0b开头）、十六进制（0x开头）和八进制的支持（0开头）
+- [x] Socket二进制数据修复
+- [x] SHA1哈希函数
+- [x] elif多分支解析修复
+- [x] 列表/字典/字符串方法（push/pop/keys/values等）
 
 ## 许可证
 

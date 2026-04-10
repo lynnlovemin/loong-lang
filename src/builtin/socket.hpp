@@ -101,6 +101,12 @@ public:
         setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 #endif
         
+        // 设置TCP_NODELAY（禁用Nagle算法，减少小包延迟）
+        if (type == SocketType::TCP) {
+            int flag = 1;
+            setsockopt(sock, IPPROTO_TCP, TCP_NODELAY, (const char*)&flag, sizeof(flag));
+        }
+        
         return true;
     }
     
@@ -214,15 +220,35 @@ public:
     std::string recv(int bufferSize = 4096) {
         if (sock == INVALID_SOCKET_VALUE) return "";
         
-        std::vector<char> buffer(bufferSize + 1);
+        std::vector<char> buffer(bufferSize);
         int received = ::recv(sock, buffer.data(), bufferSize, 0);
         
         if (received <= 0) {
             return "";
         }
         
-        buffer[received] = '\0';
-        return std::string(buffer.data());
+        // 使用长度构造，避免遇\0截断（支持二进制数据如MySQL协议）
+        return std::string(buffer.data(), received);
+    }
+    
+    // 精确接收指定字节数的数据
+    std::string recvExact(int exactSize) {
+        if (sock == INVALID_SOCKET_VALUE || exactSize <= 0) return "";
+        
+        std::string result;
+        result.resize(exactSize);
+        int totalReceived = 0;
+        
+        while (totalReceived < exactSize) {
+            int received = ::recv(sock, &result[totalReceived], exactSize - totalReceived, 0);
+            if (received <= 0) {
+                result.resize(totalReceived);
+                break;
+            }
+            totalReceived += received;
+        }
+        
+        return result;
     }
     
     // 接收所有数据
@@ -234,11 +260,11 @@ public:
         int totalReceived = 0;
         
         while (totalReceived < maxBytes) {
-            int received = ::recv(sock, buffer, sizeof(buffer) - 1, 0);
+            int received = ::recv(sock, buffer, sizeof(buffer), 0);
             if (received <= 0) break;
             
-            buffer[received] = '\0';
-            result += buffer;
+            // 使用append避免遇\0截断（支持二进制数据）
+            result.append(buffer, received);
             totalReceived += received;
         }
         
@@ -252,7 +278,7 @@ public:
         struct sockaddr_in senderAddr;
         int addrLen = sizeof(senderAddr);
         
-        std::vector<char> buffer(bufferSize + 1);
+        std::vector<char> buffer(bufferSize);
         int received = recvfrom(sock, buffer.data(), bufferSize, 0,
                                (struct sockaddr*)&senderAddr, &addrLen);
         
@@ -260,11 +286,11 @@ public:
             return "";
         }
         
-        buffer[received] = '\0';
         senderHost = inet_ntoa(senderAddr.sin_addr);
         senderPort = ntohs(senderAddr.sin_port);
         
-        return std::string(buffer.data());
+        // 使用长度构造，避免遇\0截断
+        return std::string(buffer.data(), received);
     }
     
     // 关闭连接
@@ -324,6 +350,10 @@ public:
     
     std::string recvAll(int maxBytes = 1024 * 1024) {
         return socket.recvAll(maxBytes);
+    }
+    
+    std::string recvExact(int exactSize) {
+        return socket.recvExact(exactSize);
     }
     
     void close() {

@@ -591,6 +591,177 @@ LoongValue Interpreter::visitMemberExpr(MemberExpr* expr) {
 }
 
 LoongValue Interpreter::visitCallExpr(CallExpr* expr) {
+    // 处理列表/字典/字符串方法调用
+    if (auto memberExpr = dynamic_cast<MemberExpr*>(expr->callee.get())) {
+        LoongValue object = evaluate(memberExpr->object);
+        std::vector<LoongValue> arguments;
+        for (const auto& arg : expr->arguments) {
+            arguments.push_back(evaluate(arg));
+        }
+        
+        // 列表方法
+        if (object.isList()) {
+            if (memberExpr->member == "push") {
+                for (const auto& arg : arguments) {
+                    object.listValue.push_back(arg);
+                }
+                // 更新原变量
+                if (auto ident = dynamic_cast<IdentifierExpr*>(memberExpr->object.get())) {
+                    if (environment_->exists(ident->name)) {
+                        environment_->assign(ident->name, object);
+                    }
+                }
+                return LoongValue::nil();
+            }
+            if (memberExpr->member == "pop") {
+                if (object.listValue.empty()) {
+                    return LoongValue::nil();
+                }
+                auto last = object.listValue.back();
+                object.listValue.pop_back();
+                if (auto ident = dynamic_cast<IdentifierExpr*>(memberExpr->object.get())) {
+                    if (environment_->exists(ident->name)) {
+                        environment_->assign(ident->name, object);
+                    }
+                }
+                return last;
+            }
+            if (memberExpr->member == "insert") {
+                if (arguments.size() >= 2 && arguments[0].isNumber()) {
+                    int idx = static_cast<int>(arguments[0].numberValue);
+                    if (idx < 0) idx = 0;
+                    if (idx > static_cast<int>(object.listValue.size())) idx = static_cast<int>(object.listValue.size());
+                    object.listValue.insert(object.listValue.begin() + idx, arguments[1]);
+                    if (auto ident = dynamic_cast<IdentifierExpr*>(memberExpr->object.get())) {
+                        if (environment_->exists(ident->name)) {
+                            environment_->assign(ident->name, object);
+                        }
+                    }
+                }
+                return LoongValue::nil();
+            }
+            if (memberExpr->member == "remove") {
+                if (!arguments.empty() && arguments[0].isNumber()) {
+                    int idx = static_cast<int>(arguments[0].numberValue);
+                    if (idx >= 0 && idx < static_cast<int>(object.listValue.size())) {
+                        object.listValue.erase(object.listValue.begin() + idx);
+                        if (auto ident = dynamic_cast<IdentifierExpr*>(memberExpr->object.get())) {
+                            if (environment_->exists(ident->name)) {
+                                environment_->assign(ident->name, object);
+                            }
+                        }
+                    }
+                }
+                return LoongValue::nil();
+            }
+            if (memberExpr->member == "join") {
+                std::string sep = arguments.empty() ? "" : arguments[0].stringValue;
+                std::string result;
+                for (size_t i = 0; i < object.listValue.size(); i++) {
+                    if (i > 0) result += sep;
+                    result += object.listValue[i].toString();
+                }
+                return LoongValue::string(result);
+            }
+        }
+        
+        // 字典方法
+        if (object.isDict()) {
+            if (memberExpr->member == "keys") {
+                std::vector<LoongValue> keys;
+                for (const auto& kv : object.dictValue) {
+                    keys.push_back(LoongValue::string(kv.first));
+                }
+                return LoongValue::list(keys);
+            }
+            if (memberExpr->member == "values") {
+                std::vector<LoongValue> values;
+                for (const auto& kv : object.dictValue) {
+                    values.push_back(kv.second);
+                }
+                return LoongValue::list(values);
+            }
+            if (memberExpr->member == "has") {
+                if (!arguments.empty() && arguments[0].isString()) {
+                    return LoongValue::number(object.dictValue.count(arguments[0].stringValue) > 0 ? 1 : 0);
+                }
+                return LoongValue::number(0);
+            }
+            if (memberExpr->member == "remove") {
+                if (!arguments.empty() && arguments[0].isString()) {
+                    object.dictValue.erase(arguments[0].stringValue);
+                    if (auto ident = dynamic_cast<IdentifierExpr*>(memberExpr->object.get())) {
+                        if (environment_->exists(ident->name)) {
+                            environment_->assign(ident->name, object);
+                        }
+                    }
+                }
+                return LoongValue::nil();
+            }
+        }
+        
+        // 字符串方法
+        if (object.isString()) {
+            if (memberExpr->member == "contains") {
+                if (!arguments.empty() && arguments[0].isString()) {
+                    return LoongValue::number(object.stringValue.find(arguments[0].stringValue) != std::string::npos ? 1 : 0);
+                }
+                return LoongValue::number(0);
+            }
+            if (memberExpr->member == "startsWith") {
+                if (!arguments.empty() && arguments[0].isString()) {
+                    return LoongValue::number(object.stringValue.find(arguments[0].stringValue) == 0 ? 1 : 0);
+                }
+                return LoongValue::number(0);
+            }
+            if (memberExpr->member == "endsWith") {
+                if (!arguments.empty() && arguments[0].isString()) {
+                    const std::string& suffix = arguments[0].stringValue;
+                    if (suffix.size() > object.stringValue.size()) return LoongValue::number(0);
+                    return LoongValue::number(object.stringValue.compare(object.stringValue.size() - suffix.size(), suffix.size(), suffix) == 0 ? 1 : 0);
+                }
+                return LoongValue::number(0);
+            }
+            if (memberExpr->member == "replace") {
+                if (arguments.size() >= 2 && arguments[0].isString() && arguments[1].isString()) {
+                    std::string result = object.stringValue;
+                    size_t pos = 0;
+                    while ((pos = result.find(arguments[0].stringValue, pos)) != std::string::npos) {
+                        result.replace(pos, arguments[0].stringValue.size(), arguments[1].stringValue);
+                        pos += arguments[1].stringValue.size();
+                    }
+                    return LoongValue::string(result);
+                }
+                return LoongValue::string(object.stringValue);
+            }
+            if (memberExpr->member == "split") {
+                std::string sep = arguments.empty() ? " " : arguments[0].stringValue;
+                std::vector<LoongValue> parts;
+                if (sep.empty()) {
+                    for (char c : object.stringValue) {
+                        parts.push_back(LoongValue::string(std::string(1, c)));
+                    }
+                } else {
+                    size_t start = 0;
+                    size_t pos = object.stringValue.find(sep);
+                    while (pos != std::string::npos) {
+                        parts.push_back(LoongValue::string(object.stringValue.substr(start, pos - start)));
+                        start = pos + sep.size();
+                        pos = object.stringValue.find(sep, start);
+                    }
+                    parts.push_back(LoongValue::string(object.stringValue.substr(start)));
+                }
+                return LoongValue::list(parts);
+            }
+            if (memberExpr->member == "trim") {
+                std::string s = object.stringValue;
+                s.erase(0, s.find_first_not_of(" \t\n\r"));
+                s.erase(s.find_last_not_of(" \t\n\r") + 1);
+                return LoongValue::string(s);
+            }
+        }
+    }
+    
     LoongValue callee = evaluate(expr->callee);
     
     // 类构造函数调用
@@ -2567,6 +2738,28 @@ void Interpreter::registerBuiltinFunctions() {
         }
     ));
     
+    // tcp_recv_exact(socket_id, size) - 精确接收指定字节数的TCP数据
+    globals_->define("tcp_recv_exact", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isNumber() || !args[1].isNumber()) {
+                throw std::runtime_error("tcp_recv_exact() 需要 socket_id(number) 和 size(number) 参数");
+            }
+            
+            int id = (int)args[0].numberValue;
+            int size = (int)args[1].numberValue;
+            
+            static std::map<int, std::shared_ptr<Socket>>& sockets = tcpSockets;
+            
+            auto it = sockets.find(id);
+            if (it == sockets.end()) {
+                throw std::runtime_error("无效的socket id");
+            }
+            
+            std::string data = it->second->recvExact(size);
+            return LoongValue::string(data);
+        }
+    ));
+    
     // tcp_recv_all(socket_id) - 接收所有TCP数据
     globals_->define("tcp_recv_all", LoongValue::builtinFunction(
         [](const std::vector<LoongValue>& args) -> LoongValue {
@@ -2937,6 +3130,351 @@ void Interpreter::registerBuiltinFunctions() {
             
             bool open = isPortOpen(host, port, timeout);
             return LoongValue::boolean(open);
+        }
+    ));
+    
+    // ==================== 二进制数据处理函数 ====================
+    
+    // bytes_len(data) - 获取二进制数据的字节长度
+    globals_->define("bytes_len", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("bytes_len() 需要一个字符串参数");
+            }
+            return LoongValue::number(static_cast<double>(args[0].stringValue.size()));
+        }
+    ));
+    
+    // bytes_get(data, offset) - 获取二进制数据指定偏移处的字节值(0-255)
+    globals_->define("bytes_get", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isNumber()) {
+                throw std::runtime_error("bytes_get() 需要 data(string) 和 offset(number) 参数");
+            }
+            const std::string& data = args[0].stringValue;
+            int offset = (int)args[1].numberValue;
+            if (offset < 0 || offset >= (int)data.size()) {
+                throw std::runtime_error("bytes_get() offset越界");
+            }
+            return LoongValue::number(static_cast<double>(static_cast<unsigned char>(data[offset])));
+        }
+    ));
+    
+    // bytes_set(data, offset, value) - 设置二进制数据指定偏移处的字节值，返回新数据
+    globals_->define("bytes_set", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 3 || !args[0].isString() || !args[1].isNumber() || !args[2].isNumber()) {
+                throw std::runtime_error("bytes_set() 需要 data(string), offset(number), value(number) 参数");
+            }
+            std::string data = args[0].stringValue;
+            int offset = (int)args[1].numberValue;
+            int value = (int)args[2].numberValue;
+            if (offset < 0 || offset >= (int)data.size()) {
+                throw std::runtime_error("bytes_set() offset越界");
+            }
+            data[offset] = static_cast<char>(value & 255);
+            return LoongValue::string(data);
+        }
+    ));
+    
+    // bytes_get_int16(data, offset) - 读取小端16位整数
+    globals_->define("bytes_get_int16", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isNumber()) {
+                throw std::runtime_error("bytes_get_int16() 需要 data(string) 和 offset(number) 参数");
+            }
+            const std::string& data = args[0].stringValue;
+            int offset = (int)args[1].numberValue;
+            if (offset < 0 || offset + 2 > (int)data.size()) {
+                throw std::runtime_error("bytes_get_int16() offset越界");
+            }
+            int value = (static_cast<unsigned char>(data[offset])) |
+                        (static_cast<unsigned char>(data[offset + 1]) << 8);
+            return LoongValue::number(static_cast<double>(value));
+        }
+    ));
+    
+    // bytes_get_int32(data, offset) - 读取小端32位整数
+    globals_->define("bytes_get_int32", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isNumber()) {
+                throw std::runtime_error("bytes_get_int32() 需要 data(string) 和 offset(number) 参数");
+            }
+            const std::string& data = args[0].stringValue;
+            int offset = (int)args[1].numberValue;
+            if (offset < 0 || offset + 4 > (int)data.size()) {
+                throw std::runtime_error("bytes_get_int32() offset越界");
+            }
+            long long value = (static_cast<unsigned char>(data[offset])) |
+                              (static_cast<unsigned char>(data[offset + 1]) << 8) |
+                              (static_cast<unsigned char>(data[offset + 2]) << 16) |
+                              (static_cast<long long>(static_cast<unsigned char>(data[offset + 3])) << 24);
+            return LoongValue::number(static_cast<double>(value));
+        }
+    ));
+    
+    // bytes_get_int24(data, offset) - 读取小端24位整数
+    globals_->define("bytes_get_int24", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isNumber()) {
+                throw std::runtime_error("bytes_get_int24() 需要 data(string) 和 offset(number) 参数");
+            }
+            const std::string& data = args[0].stringValue;
+            int offset = (int)args[1].numberValue;
+            if (offset < 0 || offset + 3 > (int)data.size()) {
+                throw std::runtime_error("bytes_get_int24() offset越界");
+            }
+            int value = (static_cast<unsigned char>(data[offset])) |
+                        (static_cast<unsigned char>(data[offset + 1]) << 8) |
+                        (static_cast<unsigned char>(data[offset + 2]) << 16);
+            return LoongValue::number(static_cast<double>(value));
+        }
+    ));
+    
+    // bytes_from_int8(value) - 将整数转换为1字节字符串
+    globals_->define("bytes_from_int8", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("bytes_from_int8() 需要一个整数参数");
+            }
+            int value = (int)args[0].numberValue;
+            return LoongValue::string(std::string(1, static_cast<char>(value & 255)));
+        }
+    ));
+    
+    // bytes_from_int16(value) - 将整数转换为小端2字节字符串
+    globals_->define("bytes_from_int16", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("bytes_from_int16() 需要一个整数参数");
+            }
+            int value = (int)args[0].numberValue;
+            std::string result;
+            result += static_cast<char>(value & 255);
+            result += static_cast<char>((value >> 8) & 255);
+            return LoongValue::string(result);
+        }
+    ));
+    
+    // bytes_from_int24(value) - 将整数转换为小端3字节字符串
+    globals_->define("bytes_from_int24", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("bytes_from_int24() 需要一个整数参数");
+            }
+            int value = (int)args[0].numberValue;
+            std::string result;
+            result += static_cast<char>(value & 255);
+            result += static_cast<char>((value >> 8) & 255);
+            result += static_cast<char>((value >> 16) & 255);
+            return LoongValue::string(result);
+        }
+    ));
+    
+    // bytes_from_int32(value) - 将整数转换为小端4字节字符串
+    globals_->define("bytes_from_int32", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isNumber()) {
+                throw std::runtime_error("bytes_from_int32() 需要一个整数参数");
+            }
+            long long value = (long long)args[0].numberValue;
+            std::string result;
+            result += static_cast<char>(value & 255);
+            result += static_cast<char>((value >> 8) & 255);
+            result += static_cast<char>((value >> 16) & 255);
+            result += static_cast<char>((value >> 24) & 255);
+            return LoongValue::string(result);
+        }
+    ));
+    
+    // bytes_to_hex(data) - 将二进制数据转换为十六进制字符串
+    globals_->define("bytes_to_hex", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("bytes_to_hex() 需要一个字符串参数");
+            }
+            const std::string& data = args[0].stringValue;
+            std::string result;
+            const char hex[] = "0123456789abcdef";
+            for (size_t i = 0; i < data.size(); i++) {
+                unsigned char c = static_cast<unsigned char>(data[i]);
+                result += hex[(c >> 4) & 15];
+                result += hex[c & 15];
+            }
+            return LoongValue::string(result);
+        }
+    ));
+    
+    // bytes_from_hex(hex) - 将十六进制字符串转换为二进制数据
+    globals_->define("bytes_from_hex", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("bytes_from_hex() 需要一个字符串参数");
+            }
+            const std::string& hex = args[0].stringValue;
+            if (hex.size() % 2 != 0) {
+                throw std::runtime_error("bytes_from_hex() 十六进制字符串长度必须为偶数");
+            }
+            std::string result;
+            for (size_t i = 0; i < hex.size(); i += 2) {
+                int hi = 0, lo = 0;
+                char ch = hex[i];
+                if (ch >= '0' && ch <= '9') hi = ch - '0';
+                else if (ch >= 'a' && ch <= 'f') hi = ch - 'a' + 10;
+                else if (ch >= 'A' && ch <= 'F') hi = ch - 'A' + 10;
+                ch = hex[i + 1];
+                if (ch >= '0' && ch <= '9') lo = ch - '0';
+                else if (ch >= 'a' && ch <= 'f') lo = ch - 'a' + 10;
+                else if (ch >= 'A' && ch <= 'F') lo = ch - 'A' + 10;
+                result += static_cast<char>((hi << 4) | lo);
+            }
+            return LoongValue::string(result);
+        }
+    ));
+    
+    // bytes_concat(data1, data2) - 连接两个二进制数据
+    globals_->define("bytes_concat", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("bytes_concat() 需要两个字符串参数");
+            }
+            return LoongValue::string(args[0].stringValue + args[1].stringValue);
+        }
+    ));
+    
+    // bytes_substr(data, start, len) - 截取二进制数据的子串
+    globals_->define("bytes_substr", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isNumber()) {
+                throw std::runtime_error("bytes_substr() 需要 data(string), start(number), [len(number)] 参数");
+            }
+            const std::string& data = args[0].stringValue;
+            int start = (int)args[1].numberValue;
+            int len = (int)data.size() - start;
+            if (args.size() > 2 && args[2].isNumber()) {
+                len = (int)args[2].numberValue;
+            }
+            if (start < 0 || start >= (int)data.size()) {
+                return LoongValue::string("");
+            }
+            if (start + len > (int)data.size()) {
+                len = (int)data.size() - start;
+            }
+            return LoongValue::string(data.substr(start, len));
+        }
+    ));
+    
+    // bytes_null() - 返回一个null字节
+    globals_->define("bytes_null", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            return LoongValue::string(std::string(1, '\0'));
+        }
+    ));
+    
+    // ==================== SHA1 哈希函数 ====================
+    // SHA1实现（纯C++，用于MySQL mysql_native_password认证等场景）
+    // SHA1算法: https://tools.ietf.org/html/rfc3174
+    
+    // sha1(data) - 计算SHA1哈希，返回20字节二进制数据
+    globals_->define("sha1", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.empty() || !args[0].isString()) {
+                throw std::runtime_error("sha1() 需要一个字符串参数");
+            }
+            const std::string& data = args[0].stringValue;
+            
+            // SHA1常量
+            uint32_t h0 = 0x67452301;
+            uint32_t h1 = 0xEFCDAB89;
+            uint32_t h2 = 0x98BADCFE;
+            uint32_t h3 = 0x10325476;
+            uint32_t h4 = 0xC3D2E1F0;
+            
+            uint64_t bitLen = data.size() * 8;
+            
+            // 填充消息
+            std::string msg = data;
+            msg += static_cast<char>(0x80);
+            while ((msg.size() % 64) != 56) {
+                msg += static_cast<char>(0x00);
+            }
+            // 追加原始长度（大端64位）
+            for (int i = 7; i >= 0; --i) {
+                msg += static_cast<char>((bitLen >> (i * 8)) & 0xFF);
+            }
+            
+            // 处理每个512位块
+            for (size_t offset = 0; offset < msg.size(); offset += 64) {
+                uint32_t w[80];
+                for (int i = 0; i < 16; ++i) {
+                    w[i] = (static_cast<uint32_t>(static_cast<unsigned char>(msg[offset + i*4])) << 24) |
+                            (static_cast<uint32_t>(static_cast<unsigned char>(msg[offset + i*4+1])) << 16) |
+                            (static_cast<uint32_t>(static_cast<unsigned char>(msg[offset + i*4+2])) << 8) |
+                            (static_cast<uint32_t>(static_cast<unsigned char>(msg[offset + i*4+3])));
+                }
+                for (int i = 16; i < 80; ++i) {
+                    uint32_t tmp = w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16];
+                    w[i] = (tmp << 1) | (tmp >> 31);
+                }
+                
+                uint32_t a = h0, b = h1, c = h2, d = h3, e = h4;
+                
+                for (int i = 0; i < 80; ++i) {
+                    uint32_t f, k;
+                    if (i < 20) {
+                        f = (b & c) | ((~b) & d);
+                        k = 0x5A827999;
+                    } else if (i < 40) {
+                        f = b ^ c ^ d;
+                        k = 0x6ED9EBA1;
+                    } else if (i < 60) {
+                        f = (b & c) | (b & d) | (c & d);
+                        k = 0x8F1BBCDC;
+                    } else {
+                        f = b ^ c ^ d;
+                        k = 0xCA62C1D6;
+                    }
+                    uint32_t temp = ((a << 5) | (a >> 27)) + f + e + k + w[i];
+                    e = d;
+                    d = c;
+                    c = (b << 30) | (b >> 2);
+                    b = a;
+                    a = temp;
+                }
+                
+                h0 += a; h1 += b; h2 += c; h3 += d; h4 += e;
+            }
+            
+            // 输出20字节哈希（大端）
+            std::string result;
+            uint32_t hashes[5] = {h0, h1, h2, h3, h4};
+            for (int i = 0; i < 5; ++i) {
+                result += static_cast<char>((hashes[i] >> 24) & 0xFF);
+                result += static_cast<char>((hashes[i] >> 16) & 0xFF);
+                result += static_cast<char>((hashes[i] >> 8) & 0xFF);
+                result += static_cast<char>(hashes[i] & 0xFF);
+            }
+            return LoongValue::string(result);
+        }
+    ));
+    
+    // bytes_xor(data1, data2) - 对两个字节数组进行XOR运算（用于MySQL认证等）
+    globals_->define("bytes_xor", LoongValue::builtinFunction(
+        [](const std::vector<LoongValue>& args) -> LoongValue {
+            if (args.size() < 2 || !args[0].isString() || !args[1].isString()) {
+                throw std::runtime_error("bytes_xor() 需要两个等长字符串参数");
+            }
+            const std::string& a = args[0].stringValue;
+            const std::string& b = args[1].stringValue;
+            if (a.size() != b.size()) {
+                throw std::runtime_error("bytes_xor() 两个参数长度必须相同");
+            }
+            std::string result;
+            result.resize(a.size());
+            for (size_t i = 0; i < a.size(); ++i) {
+                result[i] = a[i] ^ b[i];
+            }
+            return LoongValue::string(result);
         }
     ));
 }
