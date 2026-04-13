@@ -543,6 +543,160 @@ if server.bind(8080) && server.listen(5) {
 |------|------|
 | `sha1(data)` | 计算SHA1哈希，返回20字节二进制数据 |
 
+### MySQL 数据库驱动
+Loong v1.2.3 提供基于 TCP/Socket 实现的 MySQL 客户端驱动，支持 MySQL 5.7+ 版本。
+
+#### 快速开始
+```loong
+import mysql;
+
+// 方式一：使用便捷函数
+val conn = mysql.connect("localhost", 3306, "root", "password", "mydb");
+val result = mysql.query("SELECT * FROM users");
+println("行数: " + str(result.rowCount));
+mysql.close();
+
+// 方式二：使用 MySQL 类
+val db = mysql.MySQL();
+db.connect("localhost", 3306, "root", "password", "mydb");
+val rs = db.query("SELECT * FROM users LIMIT 10");
+db.close();
+```
+
+#### MySQL 类方法
+```loong
+import mysql;
+
+val db = mysql.MySQL();
+
+// 连接数据库
+db.connect(host, port, username, password, database);
+
+// 执行查询（SELECT）
+val result = db.query("SELECT * FROM users WHERE id = 1");
+
+// 执行非查询语句（INSERT/UPDATE/DELETE）
+val execResult = db.execute("INSERT INTO users (name) VALUES ('张三')");
+println("影响行数: " + str(execResult.affectedRows));
+println("自增ID: " + str(execResult.lastInsertId));
+
+// 切换数据库
+db.selectDb("another_database");
+
+// 检测连接
+if db.ping() {
+    println("连接正常");
+}
+
+// 关闭连接
+db.close();
+
+// 获取连接信息
+db.getServerVersion();    // 服务器版本
+db.getConnectionId();     // 连接ID
+db.getDatabase();         // 当前数据库
+db.isConnected();         // 连接状态
+```
+
+#### ResultSet 结果集
+```loong
+val result = db.query("SELECT id, name, age FROM users");
+
+// 获取列名
+println("列名: " + str(result.columns));  // ["id", "name", "age"]
+
+// 获取行数
+println("行数: " + str(result.rowCount));
+
+// 遍历结果
+val i = 0;
+while i < result.rowCount {
+    // 按列名获取值
+    val id = result.get(i, "id");
+    val name = result.get(i, "name");
+    val age = result.get(i, "age");
+    
+    // 或按列索引获取值
+    val id2 = result.getValue(i, 0);
+    
+    println("id=" + id + " name=" + name + " age=" + age);
+    i = i + 1;
+}
+
+// 对于非查询语句（INSERT/UPDATE/DELETE）
+val execResult = db.execute("UPDATE users SET age = 30 WHERE id = 1");
+println("影响行数: " + str(execResult.affectedRows));
+println("自增ID: " + str(execResult.lastInsertId));
+```
+
+#### 完整示例
+```loong
+import mysql;
+
+try {
+    // 连接数据库
+    val db = mysql.connect("192.168.1.100", 3306, "root", "password", "testdb");
+    println("连接成功! 服务器版本: " + db.getServerVersion());
+    
+    // 创建表
+    db.execute("CREATE TABLE IF NOT EXISTS users (id INT AUTO_INCREMENT PRIMARY KEY, name VARCHAR(100), age INT)");
+    
+    // 插入数据
+    db.execute("INSERT INTO users (name, age) VALUES ('张三', 25)");
+    db.execute("INSERT INTO users (name, age) VALUES ('李四', 30)");
+    
+    // 查询数据
+    val result = db.query("SELECT * FROM users");
+    println("共 " + str(result.rowCount) + " 条记录");
+    
+    val i = 0;
+    while i < result.rowCount {
+        println("id=" + result.get(i, "id") + " name=" + result.get(i, "name") + " age=" + result.get(i, "age"));
+        i = i + 1;
+    }
+    
+    // 更新数据
+    db.execute("UPDATE users SET age = 26 WHERE name = '张三'");
+    
+    // 删除数据
+    db.execute("DELETE FROM users WHERE name = '李四'");
+    
+    // 关闭连接
+    db.close();
+    println("操作完成!");
+} catch (e) {
+    println("错误: " + e.toString());
+}
+```
+
+#### MySQL 异常处理
+```loong
+import mysql
+
+try {
+    val db = mysql.connect("localhost", 3306, "root", "wrong_password", "mydb");
+} catch (e) {
+    // 捕获 MySqlException
+    println("错误码: " + str(e.code));
+    println("错误信息: " + e.message);
+}
+
+try {
+    val db = mysql.connect("localhost", 3306, "root", "password", "mydb");
+    db.query("SELECT * FROM nonexistent_table");
+} catch (e) {
+    // 捕获 SQL 错误
+    println("SQL错误: " + e.toString());
+}
+```
+
+#### 注意事项
+1. MySQL 驱动基于 TCP/Socket 实现，无需额外依赖
+2. 支持 `mysql_native_password` 认证方式
+3. 支持 UTF-8 编码，可正确处理中文数据
+4. 每次执行新命令时序列号会自动重置
+5. 建议使用 try-catch 处理可能的异常
+
 ## 包管理器
 
 Loong 包管理器提供简洁的包管理命令：
@@ -616,7 +770,7 @@ loong/
 - [x] 包管理器
 - [ ] 并行处理
 - [x] 网络协议（HTTP、TCP、UDP、Socket）
-- [ ] 数据库驱动（MySQL）
+- [x] 数据库驱动（MySQL）
 - [x] ASCII码支持
 - [x] 字符类型
 - [x] 二进制（0b开头）、十六进制（0x开头）和八进制的支持（0开头）

@@ -1,0 +1,680 @@
+import net
+
+val COM_QUIT = 1
+val COM_QUERY = 3
+val COM_PING = 14
+val COM_INIT_DB = 2
+
+val CLIENT_LONG_PASSWORD = 0x00000001
+val CLIENT_LONG_FLAG = 0x00000004
+val CLIENT_CONNECT_WITH_DB = 0x00000008
+val CLIENT_PROTOCOL_41 = 0x00000200
+val CLIENT_TRANSACTIONS = 0x00002000
+val CLIENT_SECURE_CONN = 0x00008000
+val CLIENT_MULTI_STATEMENTS = 0x00010000
+val CLIENT_MULTI_RESULTS = 0x00020000
+val CLIENT_PLUGIN_AUTH = 0x00080000
+val CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA = 0x00200000
+
+val CHARSET_UTF8MB4 = 45
+
+val RESPONSE_OK = 0x00
+val RESPONSE_ERR = 0xFF
+val RESPONSE_EOF = 0xFE
+val RESPONSE_LOCAL_INFILE = 0xFB
+
+val DEFAULT_CAPABILITIES = CLIENT_LONG_PASSWORD | CLIENT_LONG_FLAG | CLIENT_CONNECT_WITH_DB | CLIENT_PROTOCOL_41 | CLIENT_TRANSACTIONS | CLIENT_SECURE_CONN | CLIENT_MULTI_STATEMENTS | CLIENT_MULTI_RESULTS | CLIENT_PLUGIN_AUTH | CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA
+
+fn _readPacket(sockId) {
+    val header = tcp_recv_exact(sockId, 4)
+    if bytes_len(header) < 4 {
+        return {"payload": "", "sequenceId": 0, "error": "读取包头失败"}
+    }
+    val b0 = bytes_get(header, 0)
+    val b1 = bytes_get(header, 1)
+    val b2 = bytes_get(header, 2)
+    val length = b0 | (b1 << 8) | (b2 << 16)
+    val sequenceId = bytes_get(header, 3)
+    if length == 0 {
+        return {"payload": "", "sequenceId": sequenceId, "error": ""}
+    }
+    val payload = tcp_recv_exact(sockId, length)
+    return {"payload": payload, "sequenceId": sequenceId, "error": ""}
+}
+
+fn _sendPacket(sockId, data, sequenceId) {
+    val dataLen = bytes_len(data)
+    val h0 = bytes_from_int8(dataLen & 0xFF)
+    val h1 = bytes_from_int8((dataLen >> 8) & 0xFF)
+    val h2 = bytes_from_int8((dataLen >> 16) & 0xFF)
+    val h3 = bytes_from_int8(sequenceId & 0xFF)
+    val header = h0 + h1 + h2 + h3
+    tcp_send(sockId, header + data)
+    return sequenceId + 1
+}
+
+fn _readLenEncInt(data, offset) {
+    if offset >= bytes_len(data) {
+        return {"value": 0, "offset": 0}
+    }
+    val firstByte = bytes_get(data, offset)
+    if firstByte < 0xFB {
+        return {"value": firstByte, "offset": 1}
+    }
+    if firstByte == 0xFC {
+        val v = bytes_get(data, offset + 1) | (bytes_get(data, offset + 2) << 8)
+        return {"value": v, "offset": 3}
+    }
+    if firstByte == 0xFD {
+        val v = bytes_get(data, offset + 1) | (bytes_get(data, offset + 2) << 8) | (bytes_get(data, offset + 3) << 16)
+        return {"value": v, "offset": 4}
+    }
+    if firstByte == 0xFE {
+        val v = bytes_get_int32(data, offset + 1)
+        return {"value": v, "offset": 9}
+    }
+    return {"value": 0, "offset": 0}
+}
+
+fn _readLenEncString(data, offset) {
+    val lenResult = _readLenEncInt(data, offset)
+    val strLen = lenResult["value"]
+    val lenOffset = lenResult["offset"]
+    if strLen == 0 {
+        return {"value": "", "offset": lenOffset}
+    }
+    val result = bytes_substr(data, offset + lenOffset, strLen)
+    return {"value": result, "offset": lenOffset + strLen}
+}
+
+fn _readNulString(data, offset) {
+    val i = offset
+    while i < bytes_len(data) {
+        if bytes_get(data, i) == 0 {
+            val result = bytes_substr(data, offset, i - offset)
+            return {"value": result, "offset": i - offset + 1}
+        }
+        i = i + 1
+    }
+    val result = bytes_substr(data, offset, bytes_len(data) - offset)
+    return {"value": result, "offset": bytes_len(data) - offset}
+}
+
+fn _readStringOfLen(data, offset, length) {
+    if offset + length > bytes_len(data) {
+        length = bytes_len(data) - offset
+    }
+    if length <= 0 {
+        return ""
+    }
+    return bytes_substr(data, offset, length)
+}
+
+fn _parseHandshakePacket(payload) {
+    val offset = 0
+    val protocolVersion = bytes_get(payload, offset)
+    offset = offset + 1
+
+    val serverVersionResult = _readNulString(payload, offset)
+    val serverVersion = serverVersionResult["value"]
+    offset = offset + serverVersionResult["offset"]
+
+    val connectionId = bytes_get_int32(payload, offset)
+    offset = offset + 4
+
+    val salt1 = bytes_substr(payload, offset, 8)
+    offset = offset + 8
+
+    offset = offset + 1
+
+    val capabilityFlags1 = bytes_get(payload, offset) | (bytes_get(payload, offset + 1) << 8)
+    offset = offset + 2
+
+    val characterSet = bytes_get(payload, offset)
+    offset = offset + 1
+
+    val statusFlags = bytes_get(payload, offset) | (bytes_get(payload, offset + 1) << 8)
+    offset = offset + 2
+
+    val capabilityFlags2 = bytes_get(payload, offset) | (bytes_get(payload, offset + 1) << 8)
+    offset = offset + 2
+
+    val capabilities = capabilityFlags1 | (capabilityFlags2 << 16)
+
+    val salt2 = ""
+    if (capabilities & CLIENT_SECURE_CONN) != 0 {
+        val saltLen = bytes_get(payload, offset)
+        offset = offset + 1
+        offset = offset + 10
+        val part2Len = saltLen - 8
+        if part2Len > 0 {
+            salt2 = bytes_substr(payload, offset, part2Len - 1)
+        }
+        offset = offset + part2Len
+    }
+
+    val salt = salt1 + salt2
+
+    val authPluginName = ""
+    if (capabilities & CLIENT_PLUGIN_AUTH) != 0 {
+        val authResult = _readNulString(payload, offset)
+        authPluginName = authResult["value"]
+    }
+
+    return {
+        "protocolVersion": protocolVersion,
+        "serverVersion": serverVersion,
+        "connectionId": connectionId,
+        "salt": salt,
+        "capabilities": capabilities,
+        "characterSet": characterSet,
+        "statusFlags": statusFlags,
+        "authPluginName": authPluginName
+    }
+}
+
+fn _mysqlNativePassword(password, salt) {
+    val hash1 = sha1(password)
+    val hash2 = sha1(hash1)
+    val combined = salt + hash2
+    val hash3 = sha1(combined)
+    val result = bytes_xor(hash1, hash3)
+    return result
+}
+
+fn _buildAuthResponse(username, authData, database, capabilities) {
+    val data = ""
+
+    val cap1 = capabilities & 0xFFFF
+    val cap2 = (capabilities >> 16) & 0xFFFF
+    data = data + bytes_from_int16(cap1)
+    data = data + bytes_from_int16(cap2)
+
+    data = data + bytes_from_int32(0x01000000)
+
+    data = data + bytes_from_int8(CHARSET_UTF8MB4)
+
+    data = data + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0) + bytes_from_int8(0)
+
+    data = data + username + bytes_from_int8(0)
+
+    if (capabilities & CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA) != 0 {
+        val authLen = bytes_len(authData)
+        if authLen < 251 {
+            data = data + bytes_from_int8(authLen)
+        } else {
+            if authLen < 65536 {
+                data = data + bytes_from_int8(0xFC)
+                data = data + bytes_from_int16(authLen)
+            } else {
+                data = data + bytes_from_int8(0xFD)
+                data = data + bytes_from_int24(authLen)
+            }
+        }
+        data = data + authData
+    } else {
+        data = data + bytes_from_int8(bytes_len(authData))
+        data = data + authData
+    }
+
+    if (capabilities & CLIENT_CONNECT_WITH_DB) != 0 {
+        if database != "" {
+            data = data + database + bytes_from_int8(0)
+        } else {
+            data = data + bytes_from_int8(0)
+        }
+    }
+
+    if (capabilities & CLIENT_PLUGIN_AUTH) != 0 {
+        data = data + "mysql_native_password" + bytes_from_int8(0)
+    }
+
+    return data
+}
+
+fn _parseOkPacket(payload) {
+    val offset = 1
+    val affectedRowsResult = _readLenEncInt(payload, offset)
+    val affectedRows = affectedRowsResult["value"]
+    offset = offset + affectedRowsResult["offset"]
+
+    val lastInsertIdResult = _readLenEncInt(payload, offset)
+    val lastInsertId = lastInsertIdResult["value"]
+    offset = offset + lastInsertIdResult["offset"]
+
+    val statusFlags = 0
+    val warnings = 0
+    if bytes_len(payload) > offset {
+        if bytes_len(payload) >= offset + 2 {
+            statusFlags = bytes_get(payload, offset) | (bytes_get(payload, offset + 1) << 8)
+            offset = offset + 2
+        }
+        if bytes_len(payload) >= offset + 2 {
+            warnings = bytes_get(payload, offset) | (bytes_get(payload, offset + 1) << 8)
+        }
+    }
+
+    return {
+        "type": "ok",
+        "affectedRows": affectedRows,
+        "lastInsertId": lastInsertId,
+        "statusFlags": statusFlags,
+        "warnings": warnings
+    }
+}
+
+fn _parseErrorPacket(payload) {
+    val offset = 1
+    val errorCode = bytes_get(payload, offset) | (bytes_get(payload, offset + 1) << 8)
+    offset = offset + 2
+
+    val sqlState = ""
+    if bytes_len(payload) > offset {
+        if bytes_get(payload, offset) == 0x23 {
+            offset = offset + 1
+            sqlState = _readStringOfLen(payload, offset, 5)
+            offset = offset + 5
+        }
+    }
+
+    val errorMessage = ""
+    if offset < bytes_len(payload) {
+        errorMessage = _readStringOfLen(payload, offset, bytes_len(payload) - offset)
+    }
+
+    return {
+        "type": "error",
+        "errorCode": errorCode,
+        "sqlState": sqlState,
+        "errorMessage": errorMessage
+    }
+}
+
+fn _parseColumnDefinition(payload) {
+    val offset = 0
+    val catalogResult = _readLenEncString(payload, offset)
+    offset = offset + catalogResult["offset"]
+
+    val schemaResult = _readLenEncString(payload, offset)
+    offset = offset + schemaResult["offset"]
+
+    val tableResult = _readLenEncString(payload, offset)
+    offset = offset + tableResult["offset"]
+
+    val orgTableResult = _readLenEncString(payload, offset)
+    offset = offset + orgTableResult["offset"]
+
+    val nameResult = _readLenEncString(payload, offset)
+    val name = nameResult["value"]
+    offset = offset + nameResult["offset"]
+
+    val orgNameResult = _readLenEncString(payload, offset)
+    offset = offset + orgNameResult["offset"]
+
+    val lengthOfFixedLenFieldsResult = _readLenEncInt(payload, offset)
+    offset = offset + lengthOfFixedLenFieldsResult["offset"]
+
+    if offset + 7 <= bytes_len(payload) {
+        offset = offset + 7
+    }
+
+    return {"name": name}
+}
+
+fn _parseRowData(payload, colCount) {
+    val row = []
+    val offset = 0
+    val i = 0
+    while i < colCount && offset < bytes_len(payload) {
+        if bytes_get(payload, offset) == 0xFB {
+            row = push(row, nil)
+            offset = offset + 1
+        } else {
+            val strResult = _readLenEncString(payload, offset)
+            row = push(row, strResult["value"])
+            offset = offset + strResult["offset"]
+        }
+        i = i + 1
+    }
+    return row
+}
+
+fn _parseResult(sockId, firstPayload) {
+    val firstByte = bytes_get(firstPayload, 0)
+
+    if firstByte == RESPONSE_OK {
+        return _parseOkPacket(firstPayload)
+    }
+
+    if firstByte == RESPONSE_ERR {
+        return _parseErrorPacket(firstPayload)
+    }
+
+    if firstByte == RESPONSE_LOCAL_INFILE {
+        return {"type": "local_infile"}
+    }
+
+    val columnCountResult = _readLenEncInt(firstPayload, 0)
+    val columnCount = columnCountResult["value"]
+
+    val columns = []
+    val i = 0
+    while i < columnCount {
+        val colPacket = _readPacket(sockId)
+        val colDef = _parseColumnDefinition(colPacket["payload"])
+        columns = push(columns, colDef["name"])
+        i = i + 1
+    }
+
+    val eofPacket = _readPacket(sockId)
+
+    val rows = []
+    while true {
+        val rowPacket = _readPacket(sockId)
+        val rowFirstByte = bytes_get(rowPacket["payload"], 0)
+
+        if rowFirstByte == RESPONSE_EOF {
+            break
+        }
+
+        if rowFirstByte == RESPONSE_ERR {
+            return _parseErrorPacket(rowPacket["payload"])
+        }
+
+        val row = _parseRowData(rowPacket["payload"], columnCount)
+        rows = push(rows, row)
+    }
+
+    return {
+        "type": "resultset",
+        "columns": columns,
+        "rows": rows,
+        "rowCount": len(rows)
+    }
+}
+
+class MySqlException {
+    fn __init__(code, message) {
+        self.code = code
+        self.message = message
+    }
+    fn toString() {
+        return "MySqlException(" + str(self.code) + "): " + self.message
+    }
+}
+
+class ResultSet {
+    fn __init__(data) {
+        if data["type"] == "resultset" {
+            self.columns = data["columns"]
+            self.rows = data["rows"]
+            self.rowCount = data["rowCount"]
+            self.affectedRows = 0
+            self.lastInsertId = 0
+        } else {
+            if data["type"] == "ok" {
+                self.columns = []
+                self.rows = []
+                self.rowCount = 0
+                self.affectedRows = data["affectedRows"]
+                self.lastInsertId = data["lastInsertId"]
+            } else {
+                self.columns = []
+                self.rows = []
+                self.rowCount = 0
+                self.affectedRows = 0
+                self.lastInsertId = 0
+            }
+        }
+    }
+
+    fn get(rowIndex, colName) {
+        val colIndex = self.getColumnIndex(colName)
+        if colIndex < 0 {
+            return nil
+        }
+        val row = self.rows[rowIndex]
+        return row[colIndex]
+    }
+
+    fn getColumnIndex(colName) {
+        val i = 0
+        while i < len(self.columns) {
+            if self.columns[i] == colName {
+                return i
+            }
+            i = i + 1
+        }
+        return -1
+    }
+
+    fn getValue(rowIndex, colIndex) {
+        val row = self.rows[rowIndex]
+        return row[colIndex]
+    }
+
+    fn toString() {
+        if self.rowCount > 0 {
+            return "ResultSet(columns=" + str(len(self.columns)) + ", rows=" + str(self.rowCount) + ")"
+        }
+        return "ResultSet(affectedRows=" + str(self.affectedRows) + ", lastInsertId=" + str(self.lastInsertId) + ")"
+    }
+}
+
+class MySQL {
+    fn __init__() {
+        self.sockId = 0
+        self.connected = false
+        self.serverVersion = ""
+        self.connectionId = 0
+        self.capabilities = 0
+        self.charset = 0
+        self.statusFlags = 0
+        self.database = ""
+        self.sequenceId = 0
+    }
+
+    fn connect(host, port, username, password, database) {
+        if self.connected {
+            self.close()
+        }
+
+        self.sockId = tcp_connect(host, port, 30000)
+        if self.sockId <= 0 {
+            throw MySqlException(1001, "连接MySQL服务器失败: " + host + ":" + str(port))
+        }
+
+        val handshakePacket = _readPacket(self.sockId)
+        if handshakePacket["error"] != "" {
+            tcp_close(self.sockId)
+            self.sockId = 0
+            throw MySqlException(1002, "读取握手包失败: " + handshakePacket["error"])
+        }
+
+        val handshake = _parseHandshakePacket(handshakePacket["payload"])
+        self.serverVersion = handshake["serverVersion"]
+        self.connectionId = handshake["connectionId"]
+        self.capabilities = handshake["capabilities"]
+        self.charset = handshake["characterSet"]
+        self.statusFlags = handshake["statusFlags"]
+        self.database = database
+
+        val clientCapabilities = DEFAULT_CAPABILITIES
+        if database == "" {
+            clientCapabilities = clientCapabilities & (0xFFFFFFFF ^ CLIENT_CONNECT_WITH_DB)
+        }
+
+        val authData = _mysqlNativePassword(password, handshake["salt"])
+
+        self.sequenceId = handshakePacket["sequenceId"] + 1
+
+        val authResponse = _buildAuthResponse(username, authData, database, clientCapabilities)
+
+        self.sequenceId = _sendPacket(self.sockId, authResponse, self.sequenceId)
+
+        val authResultPacket = _readPacket(self.sockId)
+        self.sequenceId = authResultPacket["sequenceId"] + 1
+
+        if bytes_len(authResultPacket["payload"]) == 0 {
+            tcp_close(self.sockId)
+            self.sockId = 0
+            throw MySqlException(1003, "认证响应为空")
+        }
+
+        val authFirstByte = bytes_get(authResultPacket["payload"], 0)
+
+        if authFirstByte == RESPONSE_OK {
+            self.connected = true
+            self.sequenceId = 0
+            return true
+        }
+
+        if authFirstByte == RESPONSE_ERR {
+            val errInfo = _parseErrorPacket(authResultPacket["payload"])
+            tcp_close(self.sockId)
+            self.sockId = 0
+            throw MySqlException(errInfo["errorCode"], errInfo["errorMessage"])
+        }
+
+        if authFirstByte == RESPONSE_EOF {
+            tcp_close(self.sockId)
+            self.sockId = 0
+            throw MySqlException(1004, "需要安全连接认证(SSL)")
+        }
+
+        tcp_close(self.sockId)
+        self.sockId = 0
+        throw MySqlException(1005, "未知的认证响应: " + str(authFirstByte))
+    }
+
+    fn query(sql) {
+        if !self.connected {
+            throw MySqlException(1006, "未连接到数据库")
+        }
+        self.sequenceId = 0
+        val data = bytes_from_int8(COM_QUERY) + sql
+        self.sequenceId = _sendPacket(self.sockId, data, self.sequenceId)
+        val resultPacket = _readPacket(self.sockId)
+        self.sequenceId = resultPacket["sequenceId"] + 1
+        if resultPacket["error"] != "" {
+            throw MySqlException(1007, "读取查询结果失败: " + resultPacket["error"])
+        }
+        if bytes_len(resultPacket["payload"]) == 0 {
+            throw MySqlException(1008, "查询响应为空")
+        }
+        val result = _parseResult(self.sockId, resultPacket["payload"])
+        if result["type"] == "error" {
+            throw MySqlException(result["errorCode"], result["errorMessage"])
+        }
+        return ResultSet(result)
+    }
+
+    fn execute(sql) {
+        return self.query(sql)
+    }
+
+    fn ping() {
+        if !self.connected {
+            throw MySqlException(1006, "未连接到数据库")
+        }
+        self.sequenceId = 0
+        val data = bytes_from_int8(COM_PING)
+        self.sequenceId = _sendPacket(self.sockId, data, self.sequenceId)
+        val resultPacket = _readPacket(self.sockId)
+        self.sequenceId = resultPacket["sequenceId"] + 1
+        if bytes_len(resultPacket["payload"]) > 0 {
+            val firstByte = bytes_get(resultPacket["payload"], 0)
+            if firstByte == RESPONSE_OK {
+                return true
+            }
+            if firstByte == RESPONSE_ERR {
+                val errInfo = _parseErrorPacket(resultPacket["payload"])
+                throw MySqlException(errInfo["errorCode"], errInfo["errorMessage"])
+            }
+        }
+        return false
+    }
+
+    fn selectDb(database) {
+        if !self.connected {
+            throw MySqlException(1006, "未连接到数据库")
+        }
+        self.sequenceId = 0
+        val data = bytes_from_int8(COM_INIT_DB) + database
+        self.sequenceId = _sendPacket(self.sockId, data, self.sequenceId)
+        val resultPacket = _readPacket(self.sockId)
+        self.sequenceId = resultPacket["sequenceId"] + 1
+        if bytes_len(resultPacket["payload"]) > 0 {
+            val firstByte = bytes_get(resultPacket["payload"], 0)
+            if firstByte == RESPONSE_OK {
+                self.database = database
+                return true
+            }
+            if firstByte == RESPONSE_ERR {
+                val errInfo = _parseErrorPacket(resultPacket["payload"])
+                throw MySqlException(errInfo["errorCode"], errInfo["errorMessage"])
+            }
+        }
+        return false
+    }
+
+    fn close() {
+        if self.connected && self.sockId > 0 {
+            val data = bytes_from_int8(COM_QUIT)
+            try {
+                _sendPacket(self.sockId, data, self.sequenceId)
+            } catch (e) {
+                val _err = ""
+            }
+            tcp_close(self.sockId)
+            self.sockId = 0
+            self.connected = false
+        }
+    }
+
+    fn isConnected() {
+        return self.connected
+    }
+
+    fn getServerVersion() {
+        return self.serverVersion
+    }
+
+    fn getConnectionId() {
+        return self.connectionId
+    }
+
+    fn getDatabase() {
+        return self.database
+    }
+}
+
+val _defaultConn = nil
+
+fn connect(host, port, username, password, database) {
+    val conn = MySQL()
+    conn.connect(host, port, username, password, database)
+    _defaultConn = conn
+    return conn
+}
+
+fn query(sql) {
+    if _defaultConn == nil {
+        throw MySqlException(1009, "未创建默认连接，请先调用 mysql.connect()")
+    }
+    return _defaultConn.query(sql)
+}
+
+fn execute(sql) {
+    if _defaultConn == nil {
+        throw MySqlException(1009, "未创建默认连接，请先调用 mysql.connect()")
+    }
+    return _defaultConn.execute(sql)
+}
+
+fn close() {
+    if _defaultConn != nil {
+        _defaultConn.close()
+        _defaultConn = nil
+    }
+}
