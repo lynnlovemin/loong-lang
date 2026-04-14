@@ -1,0 +1,12 @@
+// Loong v1.2.4 import 功能测试模块
+// 位置: examples/test_import/sub/deep/module.loong
+
+val name = "deep_module"
+
+fn greet() {
+    return "Hello from deep module!"
+}
+
+fn compute(x) {
+    return x * x + 1
+}

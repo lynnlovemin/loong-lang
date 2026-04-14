@@ -1,0 +1,18 @@
+// Loong v1.2.4 import 功能测试模块
+// 位置: examples/test_import/utils/string_helper.loong
+
+fn upper(s) {
+    return upper(s)
+}
+
+fn repeat(s, n) {
+    val result = ""
+    for val i = 0; i < n; i = i + 1 {
+        result = result + s
+    }
+    return result
+}
+
+fn wrap(s, left, right) {
+    return left + s + right
+}

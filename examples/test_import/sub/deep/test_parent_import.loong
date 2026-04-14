@@ -1,0 +1,39 @@
+// Loong v1.2.4 测试 ../ 路径导入
+// 位置: examples/test_import/sub/deep/test_parent_import.loong
+// 运行: loong examples/test_import/sub/deep/test_parent_import.loong
+
+println("=== 测试 ../ 路径导入 ===")
+
+// 使用 ../../ 向上两级目录导入 greeter 模块
+import greeter from "../../greeter.loong"
+
+println("从 sub/deep/ 使用 ../../greeter.loong 导入成功!")
+println("greeter.sayHello('Deep') = ", greeter.sayHello("Deep"))
+println("greeter.add(100, 200) = ", greeter.add(100, 200))
+println("")
+
+// 使用 ../../ 向上一级目录导入 calculator 模块（utils/calculator在test_import目录下的utils目录下）
+import calculator from "../../utils/calculator.loong"
+
+println("从 sub/deep/ 使用 ../../utils/calculator.loong 导入成功!")
+println("calculator.add(5, 3) = ", calculator.add(5, 3))
+println("calculator.VERSION = ", calculator.VERSION)
+println("")
+
+// 使用 ./ 导入当前目录模块
+import module from "./module.loong"
+
+println("从 sub/deep/ 使用 ./module.loong 导入成功!")
+println("module.name = ", module.name)
+println("module.greet() = ", module.greet())
+println("module.compute(10) = ", module.compute(10))
+println("")
+
+// 从std标准库导入
+import math
+
+println("从 sub/deep/ 导入 std 标准库 math:")
+println("math.PI = ", math.PI)
+println("")
+
+println("=== ../ 路径导入测试完成! ===")

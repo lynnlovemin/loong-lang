@@ -1,0 +1,12 @@
+// Loong v1.2.4 import 功能测试模块
+// 位置: examples/test_import/greeter.loong
+
+val greeting = "Hello from greeter!"
+
+fn sayHello(name) {
+    return greeting + " My name is " + name + "."
+}
+
+fn add(a, b) {
+    return a + b
+}

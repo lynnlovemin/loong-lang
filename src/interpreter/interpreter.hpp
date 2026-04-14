@@ -96,7 +96,6 @@ private:
     
     // 模块寻址辅助方法
     std::string resolveModulePath(const std::string& moduleName, const std::string& filePath);
-    std::string searchModuleInDirectory(const std::string& dir, const std::string& moduleName);
     std::string getParentDirectory(const std::string& path);
     
 public:

@@ -1,0 +1,84 @@
+// ============================================
+// Loong v1.2.4 import 功能测试
+// 测试各种模块导入方式
+// ============================================
+
+println("=== Loong v1.2.4 import 功能测试 ===")
+println("")
+
+// ====================
+// 测试1: import math - 从std标准库导入
+// ====================
+println("--- 测试1: import math (从std标准库导入) ---")
+import math
+
+println("math.PI = ", math.PI)
+println("math.factorial(5) = ", math.factorial(5))
+println("math.max(10, 20) = ", math.max(10, 20))
+println("")
+
+// ====================
+// 测试2: import 模块 from "路径" - 从指定路径导入
+// ====================
+println("--- 测试2: import from 相对路径导入 ---")
+import greeter from "./greeter.loong"
+
+println("greeter.sayHello('Loong') = ", greeter.sayHello("Loong"))
+println("greeter.add(3, 4) = ", greeter.add(3, 4))
+println("")
+
+// ====================
+// 测试3: 点分模块名导入 - import utils.calculator
+// ====================
+println("--- 测试3: 点分模块名导入 (import utils.calculator) ---")
+import utils.calculator
+
+println("calculator.add(10, 5) = ", calculator.add(10, 5))
+println("calculator.subtract(10, 5) = ", calculator.subtract(10, 5))
+println("calculator.multiply(3, 7) = ", calculator.multiply(3, 7))
+println("calculator.VERSION = ", calculator.VERSION)
+println("")
+
+// ====================
+// 测试4: import from 指定子目录路径
+// ====================
+println("--- 测试4: import from 指定子目录路径 ---")
+import string_helper from "utils/string_helper.loong"
+
+println("string_helper.repeat('Hi', 3) = ", string_helper.repeat("Hi", 3))
+println("string_helper.wrap('Loong', '[', ']') = ", string_helper.wrap("Loong", "[", "]"))
+println("")
+
+// ====================
+// 测试5: 多层点分模块名导入 - import sub.deep.module
+// ====================
+println("--- 测试5: 多层点分模块名 (import sub.deep.module) ---")
+import sub.deep.module
+
+println("module.name = ", module.name)
+println("module.greet() = ", module.greet())
+println("module.compute(5) = ", module.compute(5))
+println("")
+
+// ====================
+// 测试6: import from 使用 ../ 路径
+// 注意: 此测试需要在子目录中的文件里执行才能测试 ../ 
+// 这里仅演示语法，实际 ../ 功能在嵌套模块中使用
+// ====================
+println("--- 测试6: ../ 路径说明 ---")
+println("../ 路径在嵌套导入时生效: 当一个模块需要导入上级目录的模块时使用")
+println("例如: 在 sub/deep/inner.loong 中 import greeter from '../../greeter.loong'")
+println("")
+
+// ====================
+// 测试7: 重复导入不会重复加载
+// ====================
+println("--- 测试7: 重复导入测试 ---")
+import math  // 不会重复加载
+println("再次 import math 成功（不会重复加载）")
+println("math.PI 仍然可用: ", math.PI)
+println("")
+
+println("========================================")
+println("Loong v1.2.4 import 功能测试完成!")
+println("========================================")

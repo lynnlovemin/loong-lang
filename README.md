@@ -1,4 +1,4 @@
-# Loong 编程语言 v1.2.3
+# Loong 编程语言 v1.2.4
 
 ## 简介
 
@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](loong-1.2.3-setup.exe)** (v1.2.3)
+📥 **[下载 Windows 安装包](loong-1.2.4-setup.exe)** (v1.2.4)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
@@ -166,6 +166,7 @@ while x > 0 {
 ```
 
 ### 模块导入
+
 ```loong
 // 导入标准库模块
 import math
@@ -173,33 +174,51 @@ import math
 println(math.PI);           // 3.14159...
 println(math.pow(2, 3));    // 8
 
-// 导入指定路径的模块
-import mylib from "lib/mylib.loong";
+// 使用点分模块名导入多层目录模块
+// 对应文件: loong.exe目录/std/dragonfire/drivers/driver.loong
+import dragonfire.drivers.driver
+
+driver.connect();           // 使用 driver. 访问模块成员
+
+// 使用 import from 指定路径导入
+import mylib from "lib/mylib.loong"
 println(mylib.greet("Loong"));
 
+// 使用 ./ 相对路径导入（仅从当前源文件目录寻址）
+import helper from "./helper.loong"
+
+// 使用 ../ 向上一级目录寻址（仅从当前源文件目录寻址）
+import utils from "../utils.loong"
+
 // 导入网络爬虫库
-import crawler from "std/crawler.loong";
+import crawler from "std/crawler.loong"
 val resp = crawler.fetch("http://example.com");
 ```
 
 #### 模块寻址规则
 
-当使用 `import 模块名` 导入模块时，Loong 会按以下优先级顺序查找模块文件：
+**`import 模块名` 自动寻址（支持点分模块名）：**
 
-1. **源码所在目录** - 从当前执行的 `.loong` 文件所在目录开始，向上逐级查找父目录
-2. **loong.exe 所在目录** - 从解释器所在目录开始，向上逐级查找父目录（包括 `std/` 子目录）
-3. **当前工作目录** - 从命令行执行的目录开始，向上逐级查找父目录
-4. **默认路径** - `std/模块名.loong`
+1. **源文件当前目录** - 优先从当前执行的 `.loong` 文件所在目录查找
+2. **loong.exe 安装目录的 std** - 如果当前目录未找到，从解释器安装目录下的 `std/` 查找
 
-在每个目录中，会尝试以下路径组合：
-- `模块名.loong`
-- `模块名/模块名.loong`
-- `lib/模块名.loong`
-- `模块名/main.loong`
+点分模块名会自动转换为目录路径，例如：
+- `import math` → 查找 `math.loong`
+- `import dragonfire.drivers.driver` → 查找 `dragonfire/drivers/driver.loong`
 
-当使用 `import 模块名 from "路径"` 指定路径时：
+**`import 模块名 from "路径"` 指定路径：**
+
 - 绝对路径直接使用
-- 相对路径相对于当前源文件所在目录解析
+- 以 `./` 或 `../` 开头的相对路径：仅基于当前源文件目录解析，**不搜索 std 标准库**
+- 其他相对路径：先从当前源文件目录解析，未找到则从 `loong.exe/std/` 解析
+
+| 路径写法 | 说明 | 是否搜索 std |
+|---------|------|-------------|
+| `"./helper.loong"` | 当前目录 | 否 |
+| `"../utils.loong"` | 上级目录 | 否 |
+| `"../../lib/util.loong"` | 上两级目录 | 否 |
+| `"lib/mylib.loong"` | 相对路径 | 是 |
+| `"std/crawler.loong"` | 标准库路径 | 是 |
 
 ### 异常处理
 ```loong
@@ -544,7 +563,7 @@ if server.bind(8080) && server.listen(5) {
 | `sha1(data)` | 计算SHA1哈希，返回20字节二进制数据 |
 
 ### MySQL 数据库驱动
-Loong v1.2.3 提供基于 TCP/Socket 实现的 MySQL 客户端驱动，支持 MySQL 5.7+ 版本。
+Loong v1.2.4 提供基于 TCP/Socket 实现的 MySQL 客户端驱动，支持 MySQL 5.7+ 版本。
 
 #### 快速开始
 ```loong

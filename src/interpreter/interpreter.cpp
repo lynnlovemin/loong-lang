@@ -1228,8 +1228,14 @@ void Interpreter::visitImportStmt(ImportStmt* stmt) {
     
     LoongValue moduleObj = loadModule(stmt->moduleName, stmt->filePath);
     if (!moduleObj.isNil()) {
+        // 提取变量名：点分模块名使用最后一段，如 dragonfire.drivers.driver → driver
+        std::string varName = stmt->moduleName;
+        size_t lastDot = varName.rfind('.');
+        if (lastDot != std::string::npos) {
+            varName = varName.substr(lastDot + 1);
+        }
         // 将模块对象注册到当前环境
-        environment_->define(stmt->moduleName, moduleObj);
+        environment_->define(varName, moduleObj);
         loadedModules_.insert(stmt->moduleName);
     }
 }
@@ -1348,38 +1354,64 @@ std::string Interpreter::getParentDirectory(const std::string& path) {
     return path.substr(0, pos);
 }
 
-// 在指定目录中搜索模块
-std::string Interpreter::searchModuleInDirectory(const std::string& dir, const std::string& moduleName) {
-    std::string basePath = dir;
-    if (!basePath.empty() && basePath.back() != '/' && basePath.back() != '\\') {
-        basePath += "/";
-    }
-    
-    // 尝试多种路径组合
-    std::vector<std::string> candidates = {
-        basePath + moduleName + ".loong",           // 模块名.loong
-        basePath + moduleName + "/" + moduleName + ".loong",  // 模块名/模块名.loong
-        basePath + "lib/" + moduleName + ".loong",  // lib/模块名.loong
-        basePath + moduleName + "/main.loong",      // 模块名/main.loong
-    };
-    
-    for (const auto& candidate : candidates) {
-        std::ifstream test(candidate);
-        if (test.is_open()) {
-            test.close();
-            return candidate;
-        }
-    }
-    
-    return "";
+// 判断路径是否为绝对路径
+static bool isAbsolutePath(const std::string& path) {
+    if (path.empty()) return false;
+    // Windows绝对路径: C:\... 或 C:/...
+    if (path.size() >= 2 && path[1] == ':') return true;
+    // Unix绝对路径: /...
+    if (path[0] == '/' || path[0] == '\\') return true;
+    return false;
+}
+
+// 判断路径是否以.或..开头（相对路径标记）
+static bool startsWithDotRelative(const std::string& path) {
+    if (path.empty()) return false;
+    if (path[0] != '.') return false;
+    // ./path 或 .\path
+    if (path.size() >= 2 && (path[1] == '/' || path[1] == '\\')) return true;
+    // ../path 或 ..\path
+    if (path.size() >= 3 && path[1] == '.' && (path[2] == '/' || path[2] == '\\')) return true;
+    return false;
 }
 
 // 解析模块路径
 std::string Interpreter::resolveModulePath(const std::string& moduleName, const std::string& filePath) {
-    // 如果指定了明确路径，先尝试解析
+    // 获取当前源文件所在目录
+    std::string sourceDir;
+    if (!importStack_.empty()) {
+        sourceDir = getParentDirectory(importStack_.back());
+    } else if (!currentSourceFile_.empty()) {
+        sourceDir = getParentDirectory(currentSourceFile_);
+    }
+    
+    // 情况1: import moduleName from "path" (指定了明确路径)
     if (!filePath.empty()) {
         // 绝对路径直接使用
-        if (filePath.find(':') == 1 || filePath[0] == '/' || filePath[0] == '\\') {
+        if (isAbsolutePath(filePath)) {
+            std::ifstream test(filePath);
+            if (test.is_open()) {
+                test.close();
+                return filePath;
+            }
+            return "";
+        }
+        
+        // 检查路径是否以 . 或 .. 开头
+        bool isDotRelative = startsWithDotRelative(filePath);
+        
+        // 相对路径：基于当前源文件目录解析
+        if (!sourceDir.empty()) {
+            std::filesystem::path base(sourceDir);
+            std::filesystem::path resolved = base / filePath;
+            std::string fullPath = resolved.string();
+            std::ifstream test(fullPath);
+            if (test.is_open()) {
+                test.close();
+                return fullPath;
+            }
+        } else {
+            // 没有源文件目录时，直接尝试相对路径
             std::ifstream test(filePath);
             if (test.is_open()) {
                 test.close();
@@ -1387,91 +1419,91 @@ std::string Interpreter::resolveModulePath(const std::string& moduleName, const 
             }
         }
         
-        // 相对路径：相对于当前源文件所在目录
-        std::string baseDir;
-        if (!importStack_.empty()) {
-            // 从导入栈获取当前文件所在目录
-            baseDir = getParentDirectory(importStack_.back());
-        } else if (!currentSourceFile_.empty()) {
-            baseDir = getParentDirectory(currentSourceFile_);
-        } else {
-            baseDir = currentDirectory_;
+        // 如果路径以 . 或 .. 开头，只在源文件目录下寻址，不搜索std
+        if (isDotRelative) {
+            return "";
         }
         
-        std::string fullPath = baseDir;
-        if (!fullPath.empty() && fullPath.back() != '/' && fullPath.back() != '\\') {
-            fullPath += "/";
+        // 普通相对路径：尝试从 loong.exe 安装目录下的 std 寻址
+        // 同时支持开发环境: 向上查找exe目录的父目录中是否有std/
+        if (!executablePath_.empty()) {
+            // 先检查exe目录/std/
+            std::filesystem::path stdPath(std::filesystem::path(executablePath_) / "std");
+            std::filesystem::path resolved = stdPath / filePath;
+            std::string fullPath = resolved.string();
+            std::ifstream test(fullPath);
+            if (test.is_open()) {
+                test.close();
+                return fullPath;
+            }
+            
+            // 开发环境回退: 向上查找父目录中的std/
+            std::string searchDir = executablePath_;
+            for (int i = 0; i < 5; ++i) {
+                std::string parent = getParentDirectory(searchDir);
+                if (parent.empty() || parent == searchDir) break;
+                
+                std::filesystem::path parentStdPath(std::filesystem::path(parent) / "std");
+                resolved = parentStdPath / filePath;
+                fullPath = resolved.string();
+                std::ifstream testParent(fullPath);
+                if (testParent.is_open()) {
+                    testParent.close();
+                    return fullPath;
+                }
+                searchDir = parent;
+            }
         }
-        fullPath += filePath;
         
-        std::ifstream test(fullPath);
+        return "";
+    }
+    
+    // 情况2: import moduleName (自动寻址)
+    // 将点分模块名转换为路径: dragonfire.drivers.driver → dragonfire/drivers/driver
+    std::string modulePath = moduleName;
+    std::replace(modulePath.begin(), modulePath.end(), '.', '/');
+    std::string moduleFile = modulePath + ".loong";
+    
+    // 1. 优先从当前源文件所在目录下寻址
+    if (!sourceDir.empty()) {
+        std::filesystem::path fullPath = std::filesystem::path(sourceDir) / moduleFile;
+        std::string fullPathStr = fullPath.string();
+        std::ifstream test(fullPathStr);
         if (test.is_open()) {
             test.close();
-            return fullPath;
+            return fullPathStr;
         }
     }
     
-    // 自动寻址逻辑
-    std::string searchDir;
-    
-    // 1. 从当前源文件所在目录开始向上查找
-    if (!importStack_.empty()) {
-        searchDir = getParentDirectory(importStack_.back());
-    } else if (!currentSourceFile_.empty()) {
-        searchDir = getParentDirectory(currentSourceFile_);
-    }
-    
-    while (!searchDir.empty()) {
-        std::string found = searchModuleInDirectory(searchDir, moduleName);
-        if (!found.empty()) {
-            return found;
-        }
-        std::string parent = getParentDirectory(searchDir);
-        if (parent == searchDir || parent.empty()) break;
-        searchDir = parent;
-    }
-    
-    // 2. 从loong.exe所在目录开始向上查找
+    // 2. 如果没有找到，从loong.exe安装目录下的std寻址
+    // 同时支持开发环境: 向上查找exe目录的父目录中是否有std/
     if (!executablePath_.empty()) {
-        searchDir = executablePath_;
-        while (!searchDir.empty()) {
-            std::string found = searchModuleInDirectory(searchDir, moduleName);
-            if (!found.empty()) {
-                return found;
-            }
-            // 尝试std子目录
-            found = searchModuleInDirectory(searchDir + "/std", moduleName);
-            if (!found.empty()) {
-                return found;
-            }
+        // 先检查exe目录/std/
+        std::filesystem::path stdPath(std::filesystem::path(executablePath_) / "std");
+        std::filesystem::path fullPath = stdPath / moduleFile;
+        std::string fullPathStr = fullPath.string();
+        std::ifstream test(fullPathStr);
+        if (test.is_open()) {
+            test.close();
+            return fullPathStr;
+        }
+        
+        // 开发环境回退: 向上查找父目录中的std/
+        std::string searchDir = executablePath_;
+        for (int i = 0; i < 5; ++i) {  // 最多向上5层
             std::string parent = getParentDirectory(searchDir);
-            if (parent == searchDir || parent.empty()) break;
+            if (parent.empty() || parent == searchDir) break;
+            
+            std::filesystem::path parentStdPath(std::filesystem::path(parent) / "std");
+            fullPath = parentStdPath / moduleFile;
+            fullPathStr = fullPath.string();
+            std::ifstream testParent(fullPathStr);
+            if (testParent.is_open()) {
+                testParent.close();
+                return fullPathStr;
+            }
             searchDir = parent;
         }
-    }
-    
-    // 3. 从当前工作目录查找
-    searchDir = currentDirectory_;
-    while (!searchDir.empty()) {
-        std::string found = searchModuleInDirectory(searchDir, moduleName);
-        if (!found.empty()) {
-            return found;
-        }
-        found = searchModuleInDirectory(searchDir + "/std", moduleName);
-        if (!found.empty()) {
-            return found;
-        }
-        std::string parent = getParentDirectory(searchDir);
-        if (parent == searchDir || parent.empty()) break;
-        searchDir = parent;
-    }
-    
-    // 4. 最后尝试简单路径
-    std::string simplePath = "std/" + moduleName + ".loong";
-    std::ifstream test(simplePath);
-    if (test.is_open()) {
-        test.close();
-        return simplePath;
     }
     
     return "";

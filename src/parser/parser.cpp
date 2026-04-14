@@ -279,6 +279,14 @@ StmtPtr Parser::parseReturnStmt() {
 
 StmtPtr Parser::parseImportStmt() {
     Token moduleName = consume(TokenType::IDENTIFIER, "期望模块名");
+    std::string fullModuleName = moduleName.value;
+    
+    // 支持点分模块名，如 dragonfire.drivers.driver
+    while (match(TokenType::DOT)) {
+        Token nextPart = consume(TokenType::IDENTIFIER, "期望模块名");
+        fullModuleName += "." + nextPart.value;
+    }
+    
     std::string filePath = "";
     
     if (match(TokenType::FROM)) {
@@ -288,7 +296,7 @@ StmtPtr Parser::parseImportStmt() {
     
     match(TokenType::SEMICOLON);
     
-    return ImportStmt::create(moduleName.value, filePath, moduleName.line, moduleName.column);
+    return ImportStmt::create(fullModuleName, filePath, moduleName.line, moduleName.column);
 }
 
 std::vector<StmtPtr> Parser::parseBlock() {
