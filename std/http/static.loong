@@ -1,0 +1,195 @@
+// Loong HTTP 服务器标准库 - 静态文件服务模块
+// http/static.loong
+
+import http.utils
+
+// ==================== 静态文件服务类 ====================
+
+class StaticFileServer {
+    fn __init__(rootPath, options) {
+        self.rootPath = rootPath  // 静态文件根目录
+        self.indexFile = "index.html"  // 默认索引文件
+        
+        if options != nil {
+            val indexOpt = options["index"]
+            if indexOpt != nil {
+                self.indexFile = indexOpt
+            }
+        }
+        
+        // 文件扩展名到 MIME 类型的映射（常用）
+        self.mimeTypes = {
+            "keys": ["html", "css", "js", "json", "png", "jpg", "jpeg", "gif", "ico", "svg", "txt", "xml", "pdf", "zip", "tar", "gz"],
+            "values": [
+                "text/html; charset=utf-8",
+                "text/css; charset=utf-8",
+                "application/javascript; charset=utf-8",
+                "application/json; charset=utf-8",
+                "image/png",
+                "image/jpeg",
+                "image/jpeg",
+                "image/gif",
+                "image/x-icon",
+                "image/svg+xml",
+                "text/plain; charset=utf-8",
+                "application/xml",
+                "application/pdf",
+                "application/zip",
+                "application/x-tar",
+                "application/gzip"
+            ]
+        }
+    }
+    
+    // 处理静态文件请求
+    fn handle(request, response) {
+        // 只处理 GET 和 HEAD 请求
+        if request.method != "GET" && request.method != "HEAD" {
+            return false
+        }
+        
+        // 获取请求路径
+        val path = request.path
+        
+        // 构建文件完整路径
+        val filePath = self.rootPath + path
+        
+        // 检查文件是否存在
+        if !file_exists(filePath) {
+            // 尝试添加 index.html
+            val indexPath = filePath
+            if substr(indexPath, len(indexPath) - 1) != "/" {
+                indexPath = indexPath + "/" + self.indexFile
+            } else {
+                indexPath = indexPath + self.indexFile
+            }
+            
+            if !file_exists(indexPath) {
+                return false  // 文件不存在，交给其他路由处理
+            }
+            
+            filePath = indexPath
+        }
+        
+        // 检查是否是目录
+        if is_directory(filePath) {
+            // 尝试返回索引文件
+            val indexPath = filePath
+            if substr(indexPath, len(indexPath) - 1) != "/" {
+                indexPath = indexPath + "/" + self.indexFile
+            } else {
+                indexPath = indexPath + self.indexFile
+            }
+            
+            if !file_exists(indexPath) {
+                // 返回 403 Forbidden
+                response.sendError(403, "Forbidden")
+                return true
+            }
+            
+            filePath = indexPath
+        }
+        
+        // 获取文件 MIME 类型
+        val mimeType = self.getMimeType(filePath)
+        
+        // 设置响应头
+        response.contentType(mimeType)
+        
+        // 设置 Content-Length
+        val fileSize = self.getFileSize(filePath)
+        if fileSize > 0 {
+            response.setHeader("Content-Length", str(fileSize))
+        }
+        
+        // 读取文件内容
+        val content = file_read(filePath)
+        
+        if content == nil {
+            response.sendError(500, "Error reading file")
+            return true
+        }
+        
+        // 设置响应体
+        response.body = content
+        
+        return true
+    }
+    
+    // 获取文件的 MIME 类型
+    fn getMimeType(filePath) {
+        // 获取文件扩展名
+        val extension = self.getFileExtension(filePath)
+        
+        if extension == "" {
+            return "application/octet-stream"
+        }
+        
+        // 在 mimeTypes 中查找
+        val keys = self.mimeTypes["keys"]
+        val values = self.mimeTypes["values"]
+        
+        for val i = 0; i < len(keys); i = i + 1 {
+            if keys[i] == extension {
+                return values[i]
+            }
+        }
+        
+        return "application/octet-stream"
+    }
+    
+    // 获取文件扩展名
+    fn getFileExtension(filePath) {
+        val lastDot = find(filePath, ".", len(filePath) - 1)
+        
+        // 从后往前找最后一个点
+        val pos = len(filePath) - 1
+        while pos >= 0 {
+            val char = substr(filePath, pos, 1)
+            if char == "." {
+                return substr(filePath, pos + 1)
+            }
+            pos = pos - 1
+        }
+        
+        return ""
+    }
+    
+    // 获取文件大小
+    fn getFileSize(filePath) {
+        // 使用 file_info 获取文件信息
+        val info = file_info(filePath)
+        if info == nil {
+            return 0
+        }
+        
+        // 假设 file_info 返回包含 size 的字典
+        if info.has("size") {
+            return info["size"]
+        }
+        
+        return 0
+    }
+    
+    // 检查路径是否安全（防止目录遍历攻击）
+    fn isSafePath(path) {
+        // 检查是否包含 ..
+        if find(path, "..") >= 0 {
+            return false
+        }
+        
+        // 检查是否以 / 开头
+        if substr(path, 0, 1) == "/" {
+            path = substr(path, 1)
+        }
+        
+        return true
+    }
+}
+
+// ==================== 便捷函数 ====================
+
+// 创建静态文件服务器
+fn createStaticFileServer(rootPath, options) {
+    return StaticFileServer(rootPath, options)
+}

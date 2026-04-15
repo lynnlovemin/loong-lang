@@ -1,0 +1,355 @@
+// Loong HTTP 服务器标准库 - 请求解析模块
+// http/request.loong
+
+import http.utils
+
+// ==================== HttpRequest 类 ====================
+
+class HttpRequest {
+    fn __init__() {
+        // 请求基本信息
+        self.method = ""
+        self.path = ""
+        self.httpVersion = ""
+        self.rawPath = ""  // 原始路径（包含查询字符串）
+        
+        // 请求头
+        self.headers = {"keys": [], "values": []}
+        
+        // 参数
+        self.params = {"keys": [], "values": []}  // URL 参数
+        self.pathParams = {"keys": [], "values": []}  // 路由路径参数（如 /users/:id 中的 id）
+        
+        // 请求体
+        self.body = ""
+        self.rawBody = ""  // 原始 body 数据
+        
+        // 解析后的 body 数据
+        self.formData = {"keys": [], "values": []}  // 表单数据
+        self.jsonData = nil  // JSON 数据
+        
+        // 其他属性
+        self.contentType = ""
+        self.contentLength = 0
+        self.clientIp = ""
+        self.clientPort = 0
+        
+        // 原始请求数据
+        self.rawRequest = ""
+    }
+    
+    // 从原始 HTTP 请求字符串解析
+    fn parse(rawData, clientIp, clientPort) {
+        self.rawRequest = rawData
+        self.clientIp = clientIp
+        self.clientPort = clientPort
+        
+        // 分割请求行和头部
+        val lines = split(rawData, "\r\n")
+        if len(lines) < 1 {
+            return false
+        }
+        
+        // 解析请求行
+        if !self._parseRequestLine(lines[0]) {
+            return false
+        }
+        
+        // 解析请求头
+        val headerEnd = self._findHeaderEnd(lines)
+        self._parseHeaders(lines, 1, headerEnd)
+        
+        // 解析请求体
+        if headerEnd < len(lines) {
+            self._parseBody(lines, headerEnd)
+        }
+        
+        return true
+    }
+    
+    // 解析请求行 "GET /path HTTP/1.1"
+    fn _parseRequestLine(line) {
+        if line == nil || line == "" {
+            return false
+        }
+        
+        val parts = split(line, " ")
+        if len(parts) < 2 {
+            return false
+        }
+        
+        self.method = parts[0]
+        self.rawPath = parts[1]
+        
+        // 解析 HTTP 版本
+        if len(parts) >= 3 {
+            self.httpVersion = parts[2]
+        } else {
+            self.httpVersion = "HTTP/1.0"
+        }
+        
+        // 分离路径和查询字符串
+        val queryPos = find(self.rawPath, "?")
+        if queryPos > 0 {
+            self.path = substr(self.rawPath, 0, queryPos)
+            val queryString = substr(self.rawPath, queryPos + 1)
+            self.params = utils.parseQueryString(queryString)
+        } else {
+            self.path = self.rawPath
+            self.params = {"keys": [], "values": []}
+        }
+        
+        return true
+    }
+    
+    // 查找头部结束位置
+    fn _findHeaderEnd(lines) {
+        for val i = 1; i < len(lines); i = i + 1 {
+            if lines[i] == "" || lines[i] == "\r\n" {
+                return i + 1
+            }
+        }
+        return len(lines)
+    }
+    
+    // 解析请求头
+    fn _parseHeaders(lines, start, end) {
+        val keys = self.headers["keys"]
+        val values = self.headers["values"]
+        
+        for val i = start; i < end && i < len(lines); i = i + 1 {
+            val line = lines[i]
+            if line == nil || line == "" {
+                continue
+            }
+            
+            val parsed = utils.parseHeaderLine(line)
+            if parsed["key"] != "" {
+                val key = parsed["key"]
+                val value = parsed["value"]
+                
+                // 处理特殊头部
+                if key == "Content-Type" {
+                    self.contentType = value
+                } elif key == "Content-Length" {
+                    self.contentLength = num(value)
+                } else {
+                    // 存储到 headers 字典
+                    keys = push(keys, key)
+                    values = push(values, value)
+                }
+            }
+        }
+        
+        self.headers = {"keys": keys, "values": values}
+    }
+    
+    // 解析请求体
+    fn _parseBody(lines, bodyStart) {
+        if bodyStart >= len(lines) {
+            return
+        }
+        
+        // 组装 body
+        val bodyLines = []
+        for val i = bodyStart; i < len(lines); i = i + 1 {
+            bodyLines = push(bodyLines, lines[i])
+        }
+        self.rawBody = join(bodyLines, "\r\n")
+        
+        // 根据 Content-Type 解析 body
+        if self.contentType != "" {
+            if utils.isContentType(self.contentType, "application/x-www-form-urlencoded") {
+                self.formData = utils.parseQueryString(self.rawBody)
+            } elif utils.isContentType(self.contentType, "application/json") {
+                self.jsonData = self.rawBody  // 保持原始 JSON 字符串
+            } elif utils.isContentType(self.contentType, "multipart/form-data") {
+                self._parseMultipart()
+            }
+        }
+        
+        self.body = self.rawBody
+    }
+    
+    // 解析 multipart/form-data
+    fn _parseMultipart() {
+        val boundary = utils.extractBoundary(self.contentType)
+        if boundary == "" {
+            return
+        }
+        
+        // 简单的 multipart 解析
+        val parts = split(self.rawBody, "--" + boundary)
+        val keys = []
+        val values = []
+        
+        for val part in parts {
+            // 跳过空部分和结束标记
+            if part == "" || part == "\r\n" || part == "--" || part == "--\r\n" {
+                continue
+            }
+            
+            // 查找 Content-Disposition 头部
+            val dispPos = find(part, "Content-Disposition:")
+            if dispPos < 0 {
+                continue
+            }
+            
+            // 查找 name 属性
+            val namePos = find(part, "name=\"")
+            if namePos < 0 {
+                continue
+            }
+            
+            val nameStart = namePos + 6
+            // 从 nameStart 开始截取剩余部分
+            val rest = substr(part, nameStart)
+            // 在 rest 中找第一个引号
+            val quotePos = find(rest, "\"")
+            if quotePos < 0 {
+                continue
+            }
+            // name 就是 rest 中引号之前的部分
+            val name = substr(rest, 0, quotePos)
+            
+            // 查找值（\r\n\r\n 之后）
+            val valueStart = find(part, "\r\n\r\n")
+            if valueStart < 0 {
+                continue
+            }
+            
+            val value = substr(part, valueStart + 4)
+            // 移除末尾的\r\n
+            val valueLen = len(value)
+            val cleanValue = value
+            if valueLen > 2 && substr(value, valueLen - 2) == "\r\n" {
+                cleanValue = substr(value, 0, valueLen - 2)
+            }
+            // 再移除可能的单独\r\n
+            val trimmedValue = trim(cleanValue)
+            
+            keys = push(keys, trim(name))
+            values = push(values, trimmedValue)
+        }
+        
+        self.formData = {"keys": keys, "values": values}
+    }
+    
+    // 获取请求头值
+    fn getHeader(key) {
+        if !self.headers.has("keys") {
+            return nil
+        }
+        
+        val keys = self.headers["keys"]
+        val values = self.headers["values"]
+        
+        for val i = 0; i < len(keys); i = i + 1 {
+            if keys[i] == key {
+                return values[i]
+            }
+        }
+        
+        return nil
+    }
+    
+    // 获取 URL 参数
+    fn getParam(key) {
+        return utils.getQueryParam(self.params, key)
+    }
+    
+    // 获取表单数据
+    fn getFormData(key) {
+        return utils.getQueryParam(self.formData, key)
+    }
+    
+    // 获取路径参数（路由参数）
+    fn getPathParam(key) {
+        return utils.getQueryParam(self.pathParams, key)
+    }
+    
+    // 设置路径参数（由 Router 调用）
+    fn setPathParams(keys, values) {
+        self.pathParams = {"keys": keys, "values": values}
+    }
+    
+    // 检查是否是 GET 请求
+    fn isGet() {
+        return self.method == "GET"
+    }
+    
+    // 检查是否是 POST 请求
+    fn isPost() {
+        return self.method == "POST"
+    }
+    
+    // 检查是否是 PUT 请求
+    fn isPut() {
+        return self.method == "PUT"
+    }
+    
+    // 检查是否是 DELETE 请求
+    fn isDelete() {
+        return self.method == "DELETE"
+    }
+    
+    // 检查是否是 OPTIONS 请求
+    fn isOptions() {
+        return self.method == "OPTIONS"
+    }
+    
+    // 获取完整的 URL
+    fn getUrl() {
+        return self.rawPath
+    }
+    
+    // 获取客户端信息
+    fn getClientInfo() {
+        return {
+            "ip": self.clientIp,
+            "port": self.clientPort
+        }
+    }
+    
+    // 打印请求信息（调试用）
+    fn printDebug() {
+        println("=== HTTP Request ===")
+        println("Method: ", self.method)
+        println("Path: ", self.path)
+        println("URL: ", self.rawPath)
+        println("Version: ", self.httpVersion)
+        println("Client: ", self.clientIp, ":", self.clientPort)
+        
+        println("\nHeaders:")
+        if self.headers.has("keys") {
+            val keys = self.headers["keys"]
+            val values = self.headers["values"]
+            for val i = 0; i < len(keys); i = i + 1 {
+                println("  ", keys[i], ": ", values[i])
+            }
+        }
+        
+        println("\nURL Params:")
+        if len(self.params["keys"]) > 0 {
+            val keys = self.params["keys"]
+            val values = self.params["values"]
+            for val i = 0; i < len(keys); i = i + 1 {
+                println("  ", keys[i], ": ", values[i])
+            }
+        }
+        
+        println("\nBody:")
+        println(self.rawBody)
+        
+        println("====================")
+    }
+}
+
+// ==================== 便捷函数 ====================
+
+// 创建 HttpRequest 对象
+fn createRequest(rawData, clientIp, clientPort) {
+    val request = HttpRequest()
+    request.parse(rawData, clientIp, clientPort)
+    return request
+}

@@ -1,0 +1,81 @@
+// Loong HTTP 服务器标准库 - 中间件模块
+// http/middleware.loong
+
+// 日志中间件 - 直接处理函数
+fn loggerMiddleware(request, response) {
+    val startTime = time_ms()
+    println("[HTTP] ", request.method, " ", request.path, " - ", request.clientIp)
+    val endTime = time_ms()
+    println("[HTTP] ", response.statusCode, " - ", endTime - startTime, "ms")
+    return true
+}
+
+// CORS 中间件处理函数
+fn corsMiddleware(request, response, origin, methods, headers) {
+    response.setHeader("Access-Control-Allow-Origin", origin)
+    response.setHeader("Access-Control-Allow-Methods", methods)
+    response.setHeader("Access-Control-Allow-Headers", headers)
+    
+    if request.method == "OPTIONS" {
+        response.statusCode = 204
+        response.body = ""
+        return false
+    }
+    
+    return true
+}
+
+// 简单 CORS 中间件
+fn simpleCorsMiddleware(request, response) {
+    return corsMiddleware(request, response, "*", "GET, POST, PUT, DELETE, OPTIONS", "Content-Type, Authorization")
+}
+
+// JSON 解析中间件
+fn jsonMiddleware(request, response) {
+    return true
+}
+
+// 基础认证中间件
+fn basicAuthMiddleware(request, response, credentials) {
+    val authHeader = request.getHeader("Authorization")
+    
+    if authHeader == nil {
+        response.statusCode = 401
+        response.body = "Unauthorized"
+        return false
+    }
+    
+    if authHeader != credentials {
+        response.statusCode = 401
+        response.body = "Unauthorized"
+        return false
+    }
+    
+    return true
+}
+
+// 安全头部中间件
+fn securityHeadersMiddleware(request, response) {
+    response.setHeader("X-Content-Type-Options", "nosniff")
+    response.setHeader("X-Frame-Options", "DENY")
+    response.setHeader("X-XSS-Protection", "1; mode=block")
+    return true
+}
+
+// 请求 ID 中间件
+fn requestIdMiddleware(request, response) {
+    val requestId = str(time_ms()) + "-" + str(len(request.path))
+    response.setHeader("X-Request-ID", requestId)
+    return true
+}
+
+// 组合中间件处理
+fn composeMiddlewares(request, response, middlewares) {
+    for val middleware in middlewares {
+        val shouldContinue = middleware
+        if shouldContinue == false {
+            return false
+        }
+    }
+    return true
+}

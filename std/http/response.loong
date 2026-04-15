@@ -1,0 +1,300 @@
+// Loong HTTP 服务器标准库 - 响应构建模块
+// http/response.loong
+
+import http.utils
+
+// ==================== HttpResponse 类 ====================
+
+class HttpResponse {
+    fn __init__() {
+        // 响应状态
+        self.statusCode = 200
+        self.statusText = "OK"
+        
+        // 响应头
+        self.headers = {"keys": [], "values": []}
+        
+        // 响应体
+        self.body = ""
+        self.isBinary = false
+        self.binaryData = nil
+        
+        // 是否已发送
+        self.sent = false
+    }
+    
+    // 设置状态码
+    fn status(code) {
+        self.statusCode = code
+        self.statusText = utils.getStatusText(code)
+        return self
+    }
+    
+    // 设置响应头
+    fn setHeader(key, value) {
+        val keys = self.headers["keys"]
+        val values = self.headers["values"]
+        
+        val newKeys = push(keys, key)
+        val newValues = push(values, value)
+        
+        self.headers = {"keys": newKeys, "values": newValues}
+        return self
+    }
+    
+    // 获取响应头
+    fn getHeader(key) {
+        val keys = self.headers["keys"]
+        val values = self.headers["values"]
+        
+        for val i = 0; i < len(keys); i = i + 1 {
+            if keys[i] == key {
+                return values[i]
+            }
+        }
+        
+        return nil
+    }
+    
+    // 设置 Content-Type
+    fn contentType(type) {
+        self.setHeader("Content-Type", type)
+        return self
+    }
+    
+    // 快捷响应：HTML
+    fn html(content) {
+        self.contentType("text/html; charset=utf-8")
+        self.body = content
+        return self
+    }
+    
+    // 快捷响应：JSON
+    fn json(content) {
+        self.contentType("application/json; charset=utf-8")
+        self.body = content
+        return self
+    }
+    
+    // 快捷响应：纯文本
+    fn text(content) {
+        self.contentType("text/plain; charset=utf-8")
+        self.body = content
+        return self
+    }
+    
+    // 快捷响应：CSS
+    fn css(content) {
+        self.contentType("text/css; charset=utf-8")
+        self.body = content
+        return self
+    }
+    
+    // 快捷响应：JavaScript
+    fn js(content) {
+        self.contentType("application/javascript; charset=utf-8")
+        self.body = content
+        return self
+    }
+    
+    // 快捷响应：重定向
+    fn redirect(url, code=302) {
+        self.statusCode = code
+        self.statusText = utils.getStatusText(code)
+        self.setHeader("Location", url)
+        self.body = ""
+        return self
+    }
+    
+    // 发送文件响应
+    fn file(filePath) {
+        // 检查文件是否存在
+        if !file_exists(filePath) {
+            self.sendError(404, "File not found")
+            return self
+        }
+        
+        // 读取文件内容（二进制模式）
+        val content = file_read(filePath)
+        
+        // 获取 MIME 类型
+        val mimeType = utils.getMimeType(filePath)
+        self.contentType(mimeType)
+        
+        // 设置 Content-Length
+        self.setHeader("Content-Length", str(len(content)))
+        
+        // 设置 body
+        self.body = content
+        
+        return self
+    }
+    
+    // 发送二进制数据
+    fn sendBinary(data) {
+        self.isBinary = true
+        self.binaryData = data
+        return self
+    }
+    
+    // 发送错误响应
+    fn sendError(code, message) {
+        self.statusCode = code
+        self.statusText = utils.getStatusText(code)
+        self.contentType("text/html; charset=utf-8")
+        
+        val htmlBody = "<!DOCTYPE html><html><head><title>" + str(code) + " " + self.statusText + "</title></head>" +
+                       "<body><h1>" + str(code) + " " + self.statusText + "</h1>" +
+                       "<p>" + message + "</p></body></html>"
+        
+        self.body = htmlBody
+        return self
+    }
+    
+    // 构建完整的 HTTP 响应字符串
+    fn build() {
+        // 状态行
+        val statusLine = "HTTP/1.1 " + str(self.statusCode) + " " + self.statusText + "\r\n"
+        
+        // 添加默认头部
+        self._addDefaultHeaders()
+        
+        // 构建头部字符串
+        val headersStr = self._buildHeadersString()
+        
+        // 头部结束
+        val headerEnd = "\r\n"
+        
+        // 组装响应
+        val response = statusLine + headersStr + headerEnd + self.body
+        
+        return response
+    }
+    
+    // 添加默认头部
+    fn _addDefaultHeaders() {
+        // 检查是否已有该头部，避免重复
+        val hasServer = false
+        val hasDate = false
+        val hasConnection = false
+        val hasContentLength = false
+        
+        val keys = self.headers["keys"]
+        for val i = 0; i < len(keys); i = i + 1 {
+            if keys[i] == "Server" {
+                hasServer = true
+            } elif keys[i] == "Date" {
+                hasDate = true
+            } elif keys[i] == "Connection" {
+                hasConnection = true
+            } elif keys[i] == "Content-Length" {
+                hasContentLength = true
+            }
+        }
+        
+        // 添加缺失的默认头部
+        if !hasServer {
+            self.setHeader("Server", "Loong-HTTP/1.0")
+        }
+        if !hasDate {
+            self.setHeader("Date", utils.httpDate())
+        }
+        if !hasConnection {
+            self.setHeader("Connection", "close")
+        }
+        if !hasContentLength && !self.isBinary {
+            self.setHeader("Content-Length", str(len(self.body)))
+        }
+    }
+    
+    // 构建头部字符串
+    fn _buildHeadersString() {
+        val keys = self.headers["keys"]
+        val values = self.headers["values"]
+        
+        val headerLines = []
+        for val i = 0; i < len(keys); i = i + 1 {
+            val line = keys[i] + ": " + values[i] + "\r\n"
+            headerLines = push(headerLines, line)
+        }
+        
+        return join(headerLines, "")
+    }
+    
+    // 获取响应内容长度
+    fn getContentLength() {
+        if self.isBinary {
+            return bytes_len(self.binaryData)
+        }
+        return len(self.body)
+    }
+    
+    // 重置响应
+    fn reset() {
+        self.statusCode = 200
+        self.statusText = "OK"
+        self.headers = {"keys": [], "values": []}
+        self.body = ""
+        self.isBinary = false
+        self.binaryData = nil
+        self.sent = false
+        return self
+    }
+    
+    // 打印响应信息（调试用）
+    fn printDebug() {
+        println("=== HTTP Response ===")
+        println("Status: ", self.statusCode, " ", self.statusText)
+        
+        println("\nHeaders:")
+        val keys = self.headers["keys"]
+        val values = self.headers["values"]
+        for val i = 0; i < len(keys); i = i + 1 {
+            println("  ", keys[i], ": ", values[i])
+        }
+        
+        println("\nBody:")
+        if self.isBinary {
+            println("[Binary data, ", bytes_len(self.binaryData), " bytes]")
+        } else {
+            println(self.body)
+        }
+        
+        println("====================")
+    }
+}
+
+// ==================== 便捷函数 ====================
+
+// 创建 HttpResponse 对象
+fn createResponse() {
+    return HttpResponse()
+}
+
+// 快速 HTML 响应
+fn htmlResponse(content) {
+    val resp = HttpResponse()
+    resp.html(content)
+    return resp
+}
+
+// 快速 JSON 响应
+fn jsonResponse(content) {
+    val resp = HttpResponse()
+    resp.json(content)
+    return resp
+}
+
+// 快速文本响应
+fn textResponse(content) {
+    val resp = HttpResponse()
+    resp.text(content)
+    return resp
+}
+
+// 快速错误响应
+fn errorResponse(code, message) {
+    val resp = HttpResponse()
+    resp.sendError(code, message)
+    return resp
+}

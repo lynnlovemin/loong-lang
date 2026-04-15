@@ -1,0 +1,53 @@
+// 测试 HTTP 工具函数
+import http.utils
+
+println("=== 测试 URL 编解码 ===")
+val encoded = http.utils.urlEncode("Hello World! 你好")
+println("编码：", encoded)
+val decoded = http.utils.urlDecode(encoded)
+println("解码：", decoded)
+
+println("\n=== 测试查询字符串解析 ===")
+val query = "name=Loong&version=1.0&active=true"
+val params = http.utils.parseQueryString(query)
+println("解析结果：", params)
+println("name:", params["name"])
+println("version:", params["version"])
+
+println("\n=== 测试 HTTP 日期 ===")
+val dateStr = http.utils.httpDate()
+println("HTTP 日期：", dateStr)
+
+println("\n=== 测试 MIME 类型 ===")
+println(".html → ", http.utils.getMimeType("index.html"))
+println(".css → ", http.utils.getMimeType("style.css"))
+println(".js → ", http.utils.getMimeType("app.js"))
+println(".json → ", http.utils.getMimeType("data.json"))
+println(".png → ", http.utils.getMimeType("image.png"))
+println(".jpg → ", http.utils.getMimeType("photo.jpg"))
+println(".mp4 → ", http.utils.getMimeType("video.mp4"))
+println(".mp3 → ", http.utils.getMimeType("audio.mp3"))
+println(".unknown → ", http.utils.getMimeType("file.unknown"))
+
+println("\n=== 测试状态码文本 ===")
+println("200 → ", http.utils.getStatusText(200))
+println("404 → ", http.utils.getStatusText(404))
+println("500 → ", http.utils.getStatusText(500))
+
+println("\n=== 测试字符串辅助 ===")
+val headerLine = "Content-Type: application/json"
+val parsed = http.utils.parseHeaderLine(headerLine)
+println("解析请求头：", parsed)
+
+println("\n=== 测试路径处理 ===")
+println("normalizePath('/api//users') → ", http.utils.normalizePath("/api//users"))
+println("isPathSafe('../etc/passwd') → ", http.utils.isPathSafe("../etc/passwd"))
+println("isPathSafe('/var/www/html') → ", http.utils.isPathSafe("/var/www/html"))
+
+println("\n=== 测试内容类型解析 ===")
+val ct = "text/html; charset=utf-8"
+val parsed = http.utils.parseContentType(ct)
+println("解析 Content-Type: ", parsed)
+println("isContentType('text/html', 'text') → ", http.utils.isContentType("text/html; charset=utf-8", "text"))
+
+println("\n=== 所有测试完成！===")

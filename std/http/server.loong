@@ -1,0 +1,286 @@
+// Loong HTTP 服务器标准库 - 核心服务器模块
+// http/server.loong
+
+import http.request
+import http.response
+import http.router
+
+// ==================== HttpServer 类 ====================
+
+class HttpServer {
+    fn __init__(host, port) {
+        self.host = host
+        self.port = port
+        self.router = router.createRouter()
+        self.socketId = nil
+        self.running = false
+        
+        // 服务器配置
+        self.config = {
+            "maxConnections": 100,
+            "timeout": 30000,
+            "keepAlive": false
+        }
+    }
+    
+    // 设置配置
+    fn setConfig(key, value) {
+        self.config[key] = value
+        return self
+    }
+    
+    // 获取配置
+    fn getConfig(key) {
+        return self.config[key]
+    }
+    
+    // 注册路由
+    fn get(path, handler) {
+        self.router.get(path, handler)
+        return self
+    }
+    
+    fn post(path, handler) {
+        self.router.post(path, handler)
+        return self
+    }
+    
+    fn put(path, handler) {
+        self.router.put(path, handler)
+        return self
+    }
+    
+    fn delete(path, handler) {
+        self.router.delete(path, handler)
+        return self
+    }
+    
+    fn options(path, handler) {
+        self.router.options(path, handler)
+        return self
+    }
+    
+    fn all(path, handler) {
+        self.router.all(path, handler)
+        return self
+    }
+    
+    // 使用中间件
+    fn use(middleware) {
+        self.router.use(middleware)
+        return self
+    }
+    
+    // 设置 404 处理
+    fn notFound(handler) {
+        self.router.notFound(handler)
+        return self
+    }
+    
+    // 启动服务器
+    fn start() {
+        println("正在启动服务器...")
+        println("监听地址：", self.host, ":", self.port)
+        
+        // 创建 TCP 服务器
+        self.socketId = tcp_server_create()
+        
+        if self.socketId == nil || self.socketId < 0 {
+            println("服务器启动失败！")
+            return false
+        }
+        
+        // 绑定端口
+        if !tcp_server_bind(self.socketId, self.port) {
+            println("端口绑定失败！")
+            return false
+        }
+        
+        // 开始监听
+        if !tcp_server_listen(self.socketId, 10) {
+            println("监听失败！")
+            return false
+        }
+        
+        self.running = true
+        println("服务器已启动，按 Ctrl+C 停止")
+        
+        // 主循环
+        while self.running {
+            self._handleConnection()
+        }
+        
+        return true
+    }
+    
+    // 处理连接
+    fn _handleConnection() {
+        // 接受客户端连接
+        val clientSocket = tcp_server_accept(self.socketId)
+        
+        if clientSocket < 0 {
+            return
+        }
+        
+        // 读取请求数据
+        val requestData = self._readRequest(clientSocket)
+        
+        if requestData != nil && requestData != "" {
+            // 处理请求
+            self._processRequest(clientSocket, requestData)
+        }
+        
+        // 关闭连接
+        tcp_close(clientSocket)
+    }
+    
+    // 读取请求数据
+    fn _readRequest(socket) {
+        val buffer = ""
+        val timeout = self.config["timeout"]
+        
+        // 读取数据
+        val data = tcp_recv(socket, 4096)
+        
+        if data == nil {
+            return ""
+        }
+        
+        buffer = data
+        
+        // 检查 Content-Length，读取完整的 body
+        val contentLengthPos = find(buffer, "Content-Length:")
+        if contentLengthPos >= 0 {
+            val lengthLine = self._getLine(buffer, contentLengthPos)
+            val lengthStr = self._extractNumber(lengthLine)
+            val contentLength = tonumber(lengthStr)
+            
+            // 查找头部结束位置
+            val headerEndPos = find(buffer, "\r\n\r\n")
+            if headerEndPos >= 0 {
+                val headerEnd = headerEndPos + 4
+                val bodyLength = len(buffer) - headerEnd
+                
+                // 继续读取剩余的 body 数据
+                while bodyLength < contentLength {
+                    val moreData = tcp_recv(socket, 4096)
+                    if moreData == nil {
+                        break
+                    }
+                    buffer = buffer + moreData
+                    bodyLength = len(buffer) - headerEnd
+                }
+            }
+        }
+        
+        return buffer
+    }
+    
+    // 获取一行
+    fn _getLine(text, startPos) {
+        val crPos = find(text, "\r\n", startPos)
+        if crPos < 0 {
+            return substr(text, startPos)
+        }
+        return substr(text, startPos, crPos - startPos)
+    }
+    
+    // 提取数字
+    fn _extractNumber(str) {
+        val digits = "0123456789"
+        val result = ""
+        
+        for val i = 0; i < len(str); i = i + 1 {
+            val char = substr(str, i, 1)
+            if find(digits, char) >= 0 {
+                result = result + char
+            } elif result != "" {
+                break
+            }
+        }
+        
+        return result
+    }
+    
+    // 处理请求
+    fn _processRequest(socket, requestData) {
+        // 创建请求对象（暂时使用默认 IP 和端口）
+        val req = request.createRequest(requestData, "127.0.0.1", 0)
+        
+        // 创建响应对象
+        val res = response.createResponse()
+        
+        // 使用路由器处理请求
+        self.router.handle(req, res)
+        
+        // 构建响应
+        val responseData = res.build()
+        
+        // 发送响应
+        tcp_send(socket, responseData)
+        
+        // 打印访问日志
+        println("[", self._getCurrentTime(), "] ", req.method, " ", req.path, " - ", res.statusCode)
+    }
+    
+    // 获取当前时间
+    fn _getCurrentTime() {
+        return str(time_ms())
+    }
+    
+    // 停止服务器
+    fn stop() {
+        self.running = false
+        
+        if self.socketId != nil {
+            tcp_close(self.socketId)
+            println("服务器已停止")
+        }
+    }
+    
+    // 获取服务器信息
+    fn getInfo() {
+        return {
+            "host": self.host,
+            "port": self.port,
+            "running": self.running,
+            "socketId": self.socketId
+        }
+    }
+    
+    // 打印路由信息
+    fn printRoutes() {
+        self.router.printRoutes()
+    }
+}
+
+// ==================== 便捷函数 ====================
+
+// 创建 HTTP 服务器
+fn createServer(host, port) {
+    return HttpServer(host, port)
+}
+
+// 快速启动服务器
+fn quickStart(host, port, routes) {
+    val server = HttpServer(host, port)
+    
+    // 注册路由
+    for val route in routes {
+        val method = route["method"]
+        val path = route["path"]
+        val handler = route["handler"]
+        
+        if method == "GET" {
+            server.get(path, handler)
+        } elif method == "POST" {
+            server.post(path, handler)
+        } elif method == "PUT" {
+            server.put(path, handler)
+        } elif method == "DELETE" {
+            server.delete(path, handler)
+        }
+    }
+    
+    return server
+}

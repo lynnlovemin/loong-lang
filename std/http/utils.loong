@@ -1,0 +1,471 @@
+// Loong HTTP 服务器标准库 - 工具函数模块
+// http/utils.loong
+
+// ==================== URL 编解码 ====================
+
+// URL 编码
+fn urlEncode(str) {
+    if str == nil || str == "" {
+        return ""
+    }
+    return url_encode(str)
+}
+
+// URL 解码
+fn urlDecode(str) {
+    if str == nil || str == "" {
+        return ""
+    }
+    return url_decode(str)
+}
+
+// ==================== 查询字符串解析 ====================
+
+// 解析查询字符串 "a=1&b=2" → {"a":"1","b":"2"}
+// 返回格式：{"keys":[key1,key2], "values":[val1,val2]}
+fn parseQueryString(queryString) {
+    if queryString == nil || queryString == "" {
+        return {"keys": [], "values": []}
+    }
+    
+    val keys = []
+    val values = []
+    val pairs = split(queryString, "&")
+    
+    for val pair in pairs {
+        val eqPos = find(pair, "=")
+        if eqPos > 0 {
+            val key = trim(substr(pair, 0, eqPos))
+            val value = trim(substr(pair, eqPos + 1))
+            val decodedValue = urlDecode(value)
+            keys = push(keys, key)
+            values = push(values, decodedValue)
+        } elif eqPos == 0 {
+            val value = substr(pair, 1)
+            keys = push(keys, "")
+            values = push(values, urlDecode(trim(value)))
+        } else {
+            keys = push(keys, trim(pair))
+            values = push(values, "")
+        }
+    }
+    
+    return {"keys": keys, "values": values}
+}
+
+// 从解析结果中获取指定 key 的值
+fn getQueryParam(parsed, key) {
+    if parsed == nil || key == nil {
+        return nil
+    }
+    
+    val keys = parsed["keys"]
+    val values = parsed["values"]
+    
+    for val i = 0; i < len(keys); i = i + 1 {
+        if keys[i] == key {
+            return values[i]
+        }
+    }
+    
+    return nil
+}
+
+// ==================== HTTP 日期格式化 ====================
+
+// 获取当前 HTTP 日期格式："Mon, 14 Apr 2026 12:00:00 GMT"
+fn httpDate() {
+    val now = time_now()
+    
+    // 计算年月日时分秒
+    val secondsInDay = 86400
+    val secondsInYear = 31536000
+    val secondsInMonth = 2592000
+    
+    val daysSinceEpoch = floor(now / secondsInDay)
+    val dayOfWeek = (daysSinceEpoch + 4) % 7
+    
+    val weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+    val months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", 
+                  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    
+    val year = 1970 + floor(now / secondsInYear)
+    val remaining = now - (year - 1970) * secondsInYear
+    val month = floor(remaining / secondsInMonth) % 12
+    val day = floor(remaining / secondsInDay) % 31 + 1
+    val hour = floor((now % secondsInDay) / 3600)
+    val minute = floor((now % 3600) / 60)
+    val second = floor(now % 60)
+    
+    val weekday = weekdays[dayOfWeek]
+    val monthName = months[month]
+    
+    return weekday + ", " + str(day) + " " + monthName + " " + str(year) + " " + 
+           padLeft(str(hour), 2, "0") + ":" + padLeft(str(minute), 2, "0") + ":" + 
+           padLeft(str(second), 2, "0") + " GMT"
+}
+
+// 数字补零
+fn padLeft(str, length, padChar) {
+    while len(str) < length {
+        str = padChar + str
+    }
+    return str
+}
+
+// ==================== MIME 类型映射 ====================
+
+// 根据文件扩展名返回 Content-Type
+fn getMimeType(filePath) {
+    if filePath == nil {
+        return "application/octet-stream"
+    }
+    
+    val dotPos = find(filePath, ".", len(filePath) - 10)
+    if dotPos < 0 {
+        return "application/octet-stream"
+    }
+    
+    val ext = lower(substr(filePath, dotPos + 1))
+    
+    // 文本类型
+    if ext == "html" || ext == "htm" {
+        return "text/html; charset=utf-8"
+    }
+    if ext == "css" {
+        return "text/css; charset=utf-8"
+    }
+    if ext == "js" || ext == "javascript" {
+        return "application/javascript; charset=utf-8"
+    }
+    if ext == "json" {
+        return "application/json; charset=utf-8"
+    }
+    if ext == "txt" {
+        return "text/plain; charset=utf-8"
+    }
+    if ext == "xml" {
+        return "application/xml; charset=utf-8"
+    }
+    if ext == "svg" {
+        return "image/svg+xml; charset=utf-8"
+    }
+    
+    // 图片类型
+    if ext == "png" {
+        return "image/png"
+    }
+    if ext == "jpg" || ext == "jpeg" {
+        return "image/jpeg"
+    }
+    if ext == "gif" {
+        return "image/gif"
+    }
+    if ext == "bmp" {
+        return "image/bmp"
+    }
+    if ext == "ico" {
+        return "image/x-icon"
+    }
+    if ext == "webp" {
+        return "image/webp"
+    }
+    
+    // 音频类型
+    if ext == "mp3" {
+        return "audio/mpeg"
+    }
+    if ext == "wav" {
+        return "audio/wav"
+    }
+    if ext == "ogg" {
+        return "audio/ogg"
+    }
+    if ext == "m4a" {
+        return "audio/mp4"
+    }
+    
+    // 视频类型
+    if ext == "mp4" {
+        return "video/mp4"
+    }
+    if ext == "webm" {
+        return "video/webm"
+    }
+    if ext == "avi" {
+        return "video/x-msvideo"
+    }
+    if ext == "mov" {
+        return "video/quicktime"
+    }
+    
+    // 文档类型
+    if ext == "pdf" {
+        return "application/pdf"
+    }
+    if ext == "doc" {
+        return "application/msword"
+    }
+    if ext == "docx" {
+        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    }
+    if ext == "xls" {
+        return "application/vnd.ms-excel"
+    }
+    if ext == "xlsx" {
+        return "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }
+    
+    // 压缩文件
+    if ext == "zip" {
+        return "application/zip"
+    }
+    if ext == "gz" {
+        return "application/gzip"
+    }
+    if ext == "tar" {
+        return "application/x-tar"
+    }
+    
+    // 默认
+    return "application/octet-stream"
+}
+
+// ==================== 状态码文本映射 ====================
+
+// 获取 HTTP 状态码对应的文本
+fn getStatusText(statusCode) {
+    val statusMap = {
+        "100": "Continue",
+        "101": "Switching Protocols",
+        "200": "OK",
+        "201": "Created",
+        "202": "Accepted",
+        "204": "No Content",
+        "206": "Partial Content",
+        "300": "Multiple Choices",
+        "301": "Moved Permanently",
+        "302": "Found",
+        "303": "See Other",
+        "304": "Not Modified",
+        "305": "Use Proxy",
+        "307": "Temporary Redirect",
+        "308": "Permanent Redirect",
+        "400": "Bad Request",
+        "401": "Unauthorized",
+        "403": "Forbidden",
+        "404": "Not Found",
+        "405": "Method Not Allowed",
+        "408": "Request Timeout",
+        "409": "Conflict",
+        "410": "Gone",
+        "411": "Length Required",
+        "413": "Payload Too Large",
+        "414": "URI Too Long",
+        "415": "Unsupported Media Type",
+        "416": "Range Not Satisfiable",
+        "418": "I'm a teapot",
+        "429": "Too Many Requests",
+        "500": "Internal Server Error",
+        "501": "Not Implemented",
+        "502": "Bad Gateway",
+        "503": "Service Unavailable",
+        "504": "Gateway Timeout",
+        "505": "HTTP Version Not Supported"
+    }
+    
+    val key = str(statusCode)
+    if statusMap.has(key) {
+        return statusMap[key]
+    }
+    return "Unknown"
+}
+
+// ==================== 字符串辅助函数 ====================
+
+// 解析请求头行 "Content-Type: application/json" → {"key":"Content-Type","value":"application/json"}
+fn parseHeaderLine(line) {
+    if line == nil || line == "" {
+        return {"key": "", "value": ""}
+    }
+    
+    val colonPos = find(line, ":")
+    if colonPos < 0 {
+        return {"key": "", "value": ""}
+    }
+    
+    val key = trim(substr(line, 0, colonPos))
+    val value = trim(substr(line, colonPos + 1))
+    
+    return {"key": key, "value": value}
+}
+
+// 解析请求头值（处理多个值）
+fn parseHeaderValue(value) {
+    if value == nil {
+        return []
+    }
+    
+    val values = split(value, ",")
+    val result = []
+    
+    for val v in values {
+        result = push(result, trim(v))
+    }
+    
+    return result
+}
+
+// 检查字符串是否以某个前缀开始（不区分大小写）
+fn startsWithIgnoreCase(str, prefix) {
+    if str == nil || prefix == nil {
+        return false
+    }
+    return startswith(lower(str), lower(prefix))
+}
+
+// 检查字符串是否以某个后缀结束（不区分大小写）
+fn endsWithIgnoreCase(str, suffix) {
+    if str == nil || suffix == nil {
+        return false
+    }
+    return endswith(lower(str), lower(suffix))
+}
+
+// 截取字符串到指定分隔符之前
+fn substrBefore(str, delimiter) {
+    if str == nil || delimiter == nil {
+        return str
+    }
+    
+    val pos = find(str, delimiter)
+    if pos < 0 {
+        return str
+    }
+    
+    return substr(str, 0, pos)
+}
+
+// 截取字符串从指定分隔符之后
+fn substrAfter(str, delimiter) {
+    if str == nil || delimiter == nil {
+        return str
+    }
+    
+    val pos = find(str, delimiter)
+    if pos < 0 {
+        return ""
+    }
+    
+    return substr(str, pos + len(delimiter))
+}
+
+// ==================== 路径处理 ====================
+
+// 规范化路径（处理多余的斜杠）
+fn normalizePath(path) {
+    if path == nil || path == "" {
+        return "/"
+    }
+    
+    // 替换多个斜杠为一个
+    val result = replace(path, "//", "/")
+    
+    // 确保以/开头
+    if !startswith(result, "/") {
+        return "/" + result
+    }
+    
+    return result
+}
+
+// 检查路径是否安全（防止目录穿越）
+fn isPathSafe(path) {
+    if path == nil {
+        return false
+    }
+    
+    // 检查是否包含 ..
+    if find(path, "..") >= 0 {
+        return false
+    }
+    
+    // 检查是否包含\（Windows 路径分隔符）
+    if find(path, "\\") >= 0 {
+        return false
+    }
+    
+    return true
+}
+
+// 合并路径
+fn joinPath(base, path) {
+    if base == nil || base == "" {
+        return path
+    }
+    if path == nil || path == "" {
+        return base
+    }
+    
+    if endswith(base, "/") {
+        if startswith(path, "/") {
+            return base + substr(path, 1)
+        }
+        return base + path
+    }
+    
+    if startswith(path, "/") {
+        return base + path
+    }
+    
+    return base + "/" + path
+}
+
+// ==================== 内容类型解析 ====================
+
+// 解析 Content-Type 头，返回类型和参数
+fn parseContentType(contentType) {
+    if contentType == nil || contentType == "" {
+        return {"type": "", "charset": "utf-8"}
+    }
+    
+    val parts = split(contentType, ";")
+    val type = trim(parts[0])
+    
+    val charset = "utf-8"
+    for val i = 1; i < len(parts); i = i + 1 {
+        val part = trim(parts[i])
+        if startswith(lower(part), "charset=") {
+            return {"type": type, "charset": trim(substr(part, 8))}
+        }
+    }
+    
+    return {"type": type, "charset": charset}
+}
+
+// 检查内容类型是否匹配
+fn isContentType(contentType, expectedType) {
+    if contentType == nil || expectedType == nil {
+        return false
+    }
+    
+    val parsed = parseContentType(contentType)
+    return startswith(lower(parsed.type), lower(expectedType))
+}
+
+// ==================== 边界解析（用于 multipart） ====================
+
+// 从 Content-Type 提取 boundary
+fn extractBoundary(contentType) {
+    if contentType == nil {
+        return ""
+    }
+    
+    val boundaryPos = find(contentType, "boundary=")
+    if boundaryPos < 0 {
+        return ""
+    }
+    
+    val boundary = substr(contentType, boundaryPos + 9)
+    return trim(boundary)
+}

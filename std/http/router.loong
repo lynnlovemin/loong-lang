@@ -1,0 +1,269 @@
+// Loong HTTP 服务器标准库 - 路由模块
+// http/router.loong
+
+// ==================== Route 类 ====================
+
+// 单个路由定义
+class Route {
+    fn __init__(method, path, handler) {
+        self.method = method  // HTTP 方法：GET, POST, PUT, DELETE, OPTIONS
+        self.path = path  // 路由路径，支持参数：/users/:id
+        self.handler = handler  // 处理函数
+        self.pathPattern = self._parsePath(path)  // 解析后的路径模式
+        self.paramNames = self.pathPattern["paramNames"]  // 参数名列表
+        self.regexParts = self.pathPattern["regexParts"]  // 正则部分
+    }
+    
+    // 解析路径，提取参数名
+    fn _parsePath(path) {
+        val paramNames = []
+        val regexParts = []
+        
+        val parts = split(path, "/")
+        for val part in parts {
+            if part == "" {
+                continue
+            }
+            
+            if substr(part, 0, 1) == ":" {
+                // 路径参数，如 :id
+                val paramName = substr(part, 1)
+                paramNames = push(paramNames, paramName)
+                regexParts = push(regexParts, "*")  // 匹配任意字符
+            } elif part == "*" {
+                // 通配符，匹配剩余所有路径
+                regexParts = push(regexParts, "**")
+            } else {
+                // 普通路径部分
+                regexParts = push(regexParts, part)
+            }
+        }
+        
+        return {"paramNames": paramNames, "regexParts": regexParts}
+    }
+    
+    // 检查请求是否匹配此路由
+    fn matches(method, path) {
+        // 检查方法是否匹配
+        if self.method != method && self.method != "*" {
+            return false
+        }
+        
+        // 解析请求路径
+        val pathParts = self._splitPath(path)
+        
+        // 检查路径部分数量是否匹配
+        if len(self.regexParts) != len(pathParts) {
+            // 如果有通配符**，可以匹配更多部分
+            val hasWildcard = false
+            for val part in self.regexParts {
+                if part == "**" {
+                    hasWildcard = true
+                    break
+                }
+            }
+            if !hasWildcard {
+                return false
+            }
+        }
+        
+        // 逐个部分匹配
+        val paramIndex = 0
+        val extractedParams = {"keys": [], "values": []}
+        
+        for val i = 0; i < len(self.regexParts); i = i + 1 {
+            val pattern = self.regexParts[i]
+            
+            if pattern == "**" {
+                // 通配符，匹配剩余所有
+                return true
+            }
+            
+            if i >= len(pathParts) {
+                return false
+            }
+            
+            val pathPart = pathParts[i]
+            
+            if pattern == "*" {
+                // 匹配任意值，提取参数
+                if paramIndex < len(self.paramNames) {
+                    val paramName = self.paramNames[paramIndex]
+                    val keys = extractedParams["keys"]
+                    val values = extractedParams["values"]
+                    val newKeys = push(keys, paramName)
+                    val newValues = push(values, pathPart)
+                    extractedParams = {"keys": newKeys, "values": newValues}
+                    paramIndex = paramIndex + 1
+                }
+            } elif pattern != pathPart {
+                // 普通路径部分，必须完全匹配
+                return false
+            }
+        }
+        
+        // 保存提取的参数
+        self.extractedParams = extractedParams
+        
+        return true
+    }
+    
+    // 分割路径
+    fn _splitPath(path) {
+        val parts = split(path, "/")
+        val result = []
+        for val part in parts {
+            if part != "" {
+                result = push(result, part)
+            }
+        }
+        return result
+    }
+    
+    // 获取提取的路径参数
+    fn getParams() {
+        if self.extractedParams == nil {
+            return {"keys": [], "values": []}
+        }
+        return self.extractedParams
+    }
+}
+
+// ==================== Router 类 ====================
+
+class Router {
+    fn __init__() {
+        // 存储所有路由
+        self.routes = []
+        // 404 处理函数
+        self.notFoundHandler = nil
+        // 中间件
+        self.middlewares = []
+    }
+    
+    // 添加路由
+    fn addRoute(method, path, handler) {
+        val route = Route(method, path, handler)
+        self.routes = push(self.routes, route)
+        return self
+    }
+    
+    // GET 路由
+    fn get(path, handler) {
+        return self.addRoute("GET", path, handler)
+    }
+    
+    // POST 路由
+    fn post(path, handler) {
+        return self.addRoute("POST", path, handler)
+    }
+    
+    // PUT 路由
+    fn put(path, handler) {
+        return self.addRoute("PUT", path, handler)
+    }
+    
+    // DELETE 路由
+    fn delete(path, handler) {
+        return self.addRoute("DELETE", path, handler)
+    }
+    
+    // OPTIONS 路由
+    fn options(path, handler) {
+        return self.addRoute("OPTIONS", path, handler)
+    }
+    
+    // 通配符路由（匹配所有方法）
+    fn all(path, handler) {
+        return self.addRoute("*", path, handler)
+    }
+    
+    // 添加中间件
+    fn use(middleware) {
+        self.middlewares = push(self.middlewares, middleware)
+        return self
+    }
+    
+    // 设置 404 处理函数
+    fn notFound(handler) {
+        self.notFoundHandler = handler
+        return self
+    }
+    
+    // 查找匹配的路由
+    fn findRoute(method, path) {
+        for val route in self.routes {
+            if route.matches(method, path) {
+                return route
+            }
+        }
+        return nil
+    }
+    
+    // 处理请求
+    fn handle(request, response) {
+        // 运行中间件
+        for val middleware in self.middlewares {
+            val shouldContinue = middleware(request, response)
+            if shouldContinue == false {
+                return response
+            }
+        }
+        
+        // 查找匹配的路由
+        val route = self.findRoute(request.method, request.path)
+        
+        if route == nil {
+            // 没有匹配的路由
+            if self.notFoundHandler != nil {
+                self.notFoundHandler(request, response)
+            } else {
+                response.sendError(404, "Not Found")
+            }
+            return response
+        }
+        
+        // 提取路径参数
+        val params = route.getParams()
+        request.setPathParams(params["keys"], params["values"])
+        
+        // 调用处理函数
+        route.handler(request, response)
+        
+        return response
+    }
+    
+    // 获取所有路由信息
+    fn getRoutes() {
+        val routeInfo = []
+        for val route in self.routes {
+            val info = {
+                "method": route.method,
+                "path": route.path
+            }
+            routeInfo = push(routeInfo, info)
+        }
+        return routeInfo
+    }
+    
+    // 打印所有路由（调试用）
+    fn printRoutes() {
+        println("=== 路由列表 ===")
+        for val route in self.routes {
+            println("  ", route.method, " ", route.path)
+        }
+        println("================")
+    }
+}
+
+// ==================== 便捷函数 ====================
+
+// 创建 Router 对象
+fn createRouter() {
+    return Router()
+}
+
+// 创建简单的路由处理器
+fn routeHandler(handler) {
+    return handler
+}
