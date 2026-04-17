@@ -885,17 +885,37 @@ StmtPtr Parser::parseSwitchStmt() {
     // 解析case和default分支
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
         if (match(TokenType::CASE)) {
-            // 解析case值
-            ExprPtr caseValue = parseExpression();
-            consume(TokenType::COLON, "期望 ':' 开始case体");
+            // 收集连续的case值（支持多case共享同一代码块）
+            std::vector<ExprPtr> caseValues;
             
-            // 解析case体
+            while (true) {
+                // 解析case值
+                ExprPtr caseValue = parseExpression();
+                caseValues.push_back(caseValue);
+                
+                // 消耗冒号
+                consume(TokenType::COLON, "期望 ':' 开始case体");
+                
+                // 检查是否有下一个case（fall-through）
+                if (check(TokenType::CASE)) {
+                    advance(); // 消耗CASE关键字
+                    // 继续收集下一个case值
+                } else {
+                    // 没有下一个case，退出循环
+                    break;
+                }
+            }
+            
+            // 解析共享的case体
             std::vector<StmtPtr> caseBody;
             while (!check(TokenType::CASE) && !check(TokenType::DEFAULT) && !check(TokenType::RBRACE) && !isAtEnd()) {
                 caseBody.push_back(parseStatement());
             }
             
-            cases.push_back(CaseClause::create(caseValue, caseBody, false, caseValue->line, caseValue->column));
+            // 为每个case值创建一个CaseClause，共享同一个body
+            for (const auto& value : caseValues) {
+                cases.push_back(CaseClause::create(value, caseBody, false, value->line, value->column));
+            }
         } else if (match(TokenType::DEFAULT)) {
             if (hasDefault) {
                 error(previous(), "switch语句只能有一个default分支");

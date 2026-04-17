@@ -1,0 +1,74 @@
+// 测试多case共享代码块功能
+
+println("=== 测试多case共享代码块 ===\n");
+
+// 测试1: 周末判断
+println("【测试 1】周末判断");
+val testWeekend = fn(day) {
+    switch day {
+        case "Saturday":
+        case "Sunday":
+            println("  " + day + " 是周末");
+        default:
+            println("  " + day + " 是工作日");
+    }
+};
+
+testWeekend("Monday");
+testWeekend("Saturday");
+testWeekend("Sunday");
+testWeekend("Friday");
+
+// 测试2: 数字范围分组
+println("\n【测试 2】数字范围分组");
+val testNumberGroup = fn(num) {
+    switch num {
+        case 1:
+        case 2:
+        case 3:
+            println("  " + num + " 属于小组");
+        case 4:
+        case 5:
+        case 6:
+            println("  " + num + " 属于大组");
+        default:
+            println("  " + num + " 不属于任何组");
+    }
+};
+
+testNumberGroup(1);
+testNumberGroup(3);
+testNumberGroup(5);
+testNumberGroup(10);
+
+// 测试3: 季节判断
+println("\n【测试 3】季节判断");
+val testSeason = fn(month) {
+    switch month {
+        case 3:
+        case 4:
+        case 5:
+            println("  " + month + "月是春季");
+        case 6:
+        case 7:
+        case 8:
+            println("  " + month + "月是夏季");
+        case 9:
+        case 10:
+        case 11:
+            println("  " + month + "月是秋季");
+        case 12:
+        case 1:
+        case 2:
+            println("  " + month + "月是冬季");
+        default:
+            println("  " + month + "月无效");
+    }
+};
+
+testSeason(3);
+testSeason(7);
+testSeason(10);
+testSeason(12);
+
+println("\n=== 测试完成 ===");
