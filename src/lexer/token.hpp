@@ -89,6 +89,7 @@ enum class TokenType {
     DOT,            // .
     SEMICOLON,      // ;
     COLON,          // :
+    ARROW,          // -> (Lambda箭头)
 
     // 特殊
     END_OF_FILE,    // 文件结束
@@ -170,6 +171,7 @@ struct Token {
             case TokenType::DOT: return "DOT";
             case TokenType::SEMICOLON: return "SEMICOLON";
             case TokenType::COLON: return "COLON";
+            case TokenType::ARROW: return "ARROW";
             case TokenType::END_OF_FILE: return "END_OF_FILE";
             case TokenType::ERROR: return "ERROR";
             default: return "UNKNOWN";

@@ -60,6 +60,15 @@ private:
     ExprPtr parseCall();
     ExprPtr parsePrimary();
     
+    // Lambda/匿名函数解析
+    ExprPtr parseLambdaExpr();
+    ExprPtr parseAnonymousFn();
+    ExprPtr parseParenOrLambda();  // 解析括号表达式或 Lambda
+    ExprPtr parseLambdaBody(const std::vector<std::string>& params,
+                           const std::vector<std::pair<std::string, ExprPtr>>& defaultParams,
+                           int line, int column);
+    std::pair<std::vector<std::string>, std::vector<std::pair<std::string, ExprPtr>>> parseLambdaParams();
+    
     // 辅助解析
     std::vector<StmtPtr> parseBlock();
     std::vector<ExprPtr> parseArguments();

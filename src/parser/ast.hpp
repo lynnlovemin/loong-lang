@@ -255,6 +255,50 @@ public:
     }
 };
 
+// Lambda/匿名函数表达式
+class LambdaExpr : public Expr {
+public:
+    std::vector<std::string> params;                          // 参数列表
+    std::vector<std::pair<std::string, ExprPtr>> defaultParams; // 默认参数
+    std::vector<StmtPtr> body;                                 // 函数体（语句列表）
+    ExprPtr expression;                                        // 单表达式Lambda（可为空）
+    bool isBlockBody;                                          // true=块体 false=表达式体
+    
+    // 创建块体Lambda/匿名函数
+    static ExprPtr createBlock(
+            const std::vector<std::string>& params,
+            const std::vector<std::pair<std::string, ExprPtr>>& defaultParams,
+            const std::vector<StmtPtr>& body,
+            int line = 1, int column = 1) {
+        auto expr = std::make_shared<LambdaExpr>();
+        expr->params = params;
+        expr->defaultParams = defaultParams;
+        expr->body = body;
+        expr->expression = nullptr;
+        expr->isBlockBody = true;
+        expr->line = line;
+        expr->column = column;
+        return expr;
+    }
+    
+    // 创建表达式体Lambda
+    static ExprPtr createExpression(
+            const std::vector<std::string>& params,
+            const std::vector<std::pair<std::string, ExprPtr>>& defaultParams,
+            ExprPtr expression,
+            int line = 1, int column = 1) {
+        auto expr = std::make_shared<LambdaExpr>();
+        expr->params = params;
+        expr->defaultParams = defaultParams;
+        expr->body = {};
+        expr->expression = expression;
+        expr->isBlockBody = false;
+        expr->line = line;
+        expr->column = column;
+        return expr;
+    }
+};
+
 // ==================== 语句节点 ====================
 
 // 表达式语句

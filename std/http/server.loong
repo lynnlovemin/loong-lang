@@ -1,9 +1,9 @@
 // Loong HTTP 服务器标准库 - 核心服务器模块
 // http/server.loong
 
-import http.request
-import http.response
-import http.router
+import request
+import response
+import router
 
 // ==================== HttpServer 类 ====================
 

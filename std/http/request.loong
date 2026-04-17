@@ -1,7 +1,7 @@
 // Loong HTTP 服务器标准库 - 请求解析模块
 // http/request.loong
 
-import http.utils
+import utils
 
 // ==================== HttpRequest 类 ====================
 

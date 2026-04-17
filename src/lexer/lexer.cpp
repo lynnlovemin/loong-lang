@@ -366,7 +366,13 @@ void Lexer::scanToken() {
         
         // 运算符
         case '+': addToken(TokenType::PLUS); break;
-        case '-': addToken(TokenType::MINUS); break;
+        case '-':
+            if (match('>')) {
+                addToken(TokenType::ARROW);  // Lambda箭头 ->
+            } else {
+                addToken(TokenType::MINUS);
+            }
+            break;
         case '*': addToken(TokenType::STAR); break;
         case '/': addToken(TokenType::SLASH); break;
         case '%': addToken(TokenType::PERCENT); break;

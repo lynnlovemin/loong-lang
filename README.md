@@ -1,4 +1,4 @@
-# Loong 编程语言 v1.2.4
+# Loong 编程语言 v1.3.0
 
 ## 简介
 
@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](loong-1.2.4-setup.exe)** (v1.2.4)
+📥 **[下载 Windows 安装包](loong-1.3.0-setup.exe)** (v1.3.0)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
@@ -134,6 +134,119 @@ fn greet(name = "World") {
     return "Hello, " + name;
 }
 ```
+
+### 匿名函数和 Lambda 表达式
+
+Loong v1.3.0 新增匿名函数和 Lambda 表达式支持
+
+**匿名函数** - 使用 `fn` 关键字定义
+```loong
+// 基本语法
+val add = fn(a, b) {
+    return a + b;
+};
+
+// 作为回调参数
+handler(fn(req, res) {
+    res.write("Hello");
+});
+
+// 支持默认参数
+val greet = fn(name, greeting = "Hello") {
+    return greeting + ", " + name + "!";
+};
+```
+
+**Lambda 表达式** - 使用 `->` 箭头语法
+```loong
+// 单表达式 Lambda（自动返回）
+val square = x -> x * x;
+val add = (a, b) -> a + b;
+
+// 无参数 Lambda
+val getPi = () -> 3.14159;
+
+// 块体 Lambda（需要显式 return）
+val factorial = n -> {
+    if n <= 1 {
+        return 1;
+    }
+    return n * factorial(n - 1);
+};
+
+// Lambda 作为回调
+val doubled = map([1, 2, 3], x -> x * 2);
+val evens = filter([1, 2, 3, 4, 5], x -> x % 2 == 0);
+
+// 立即执行 Lambda
+val result = (() -> {
+    val temp = 42;
+    return temp * 2;
+})();
+```
+
+**闭包捕获**
+```loong
+// 自动捕获外部变量
+val factor = 10;
+val scale = x -> x * factor;  // 捕获 factor
+
+// 工厂函数
+fn makeMultiplier(n) {
+    return x -> x * n;  // 捕获参数 n
+}
+val double = makeMultiplier(2);
+println(double(5));  // 输出: 10
+```
+
+**高阶函数示例**
+```loong
+// map 函数
+fn map(list, mapper) {
+    val result = [];
+    for val item in list {
+        result.push(mapper(item));
+    }
+    return result;
+}
+
+// filter 函数
+fn filter(list, predicate) {
+    val result = [];
+    for val item in list {
+        if predicate(item) {
+            result.push(item);
+        }
+    }
+    return result;
+}
+
+// reduce 函数
+fn reduce(list, initial, reducer) {
+    val acc = initial;
+    for val item in list {
+        acc = reducer(acc, item);
+    }
+    return acc;
+}
+
+// 使用示例
+val nums = [1, 2, 3, 4, 5];
+val doubled = map(nums, x -> x * 2);         // [2, 4, 6, 8, 10]
+val evens = filter(nums, x -> x % 2 == 0);   // [2, 4]
+val sum = reduce(nums, 0, (a, b) -> a + b);  // 15
+```
+
+**语法对比**
+
+| 特性 | 匿名函数 | Lambda |
+|------|---------|--------|
+| 语法 | `fn(params) { body }` | `(params) -> expr` 或 `(params) -> { body }` |
+| 单参数简写 | 不支持 | `x -> expr` |
+| 无参数 | `fn() { }` | `() -> expr` |
+| 返回值 | 需显式 `return` | 表达式体自动返回，块体需显式 `return` |
+| 默认参数 | 支持 | 支持 |
+| 闭包 | 支持 | 支持 |
 
 ### 条件语句
 ```loong
@@ -797,6 +910,7 @@ loong/
 - [x] SHA1哈希函数
 - [x] elif多分支解析修复
 - [x] 列表/字典/字符串方法（push/pop/keys/values等）
+- [x] 匿名函数和 Lambda 表达式
 
 ## 许可证
 

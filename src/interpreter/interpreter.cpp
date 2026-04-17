@@ -239,6 +239,9 @@ LoongValue Interpreter::evaluate(ExprPtr expr) {
     if (auto e = dynamic_cast<SuperExpr*>(expr.get())) {
         return visitSuperExpr(e);
     }
+    if (auto e = dynamic_cast<LambdaExpr*>(expr.get())) {
+        return visitLambdaExpr(e);
+    }
 
     return LoongValue::nil();
 }
@@ -1333,7 +1336,7 @@ LoongValue Interpreter::visitThisExpr(ThisExpr* expr) {
 
 LoongValue Interpreter::visitSuperExpr(SuperExpr* expr) {
     if (!currentSuperClass_) {
-        throw std::runtime_error("\'super\' 只能在子类方法内使用");
+        throw std::runtime_error("'super' 只能在子类方法内使用");
     }
     
     // 查找父类方法
@@ -1343,6 +1346,34 @@ LoongValue Interpreter::visitSuperExpr(SuperExpr* expr) {
     }
     
     return methodIt->second;
+}
+
+LoongValue Interpreter::visitLambdaExpr(LambdaExpr* expr) {
+    // 创建用户函数对象
+    auto func = std::make_shared<UserFunction>();
+    func->name = "<lambda>";  // Lambda/匿名函数名称
+    func->params = expr->params;
+    func->closure = environment_;  // 捕获当前环境（闭包）
+    
+    // 转换默认参数
+    for (const auto& dp : expr->defaultParams) {
+        func->defaultParams.push_back(DefaultParamInfo(dp.first, dp.second));
+    }
+    
+    // 处理函数体
+    if (expr->isBlockBody) {
+        // 块体 Lambda/匿名函数
+        func->body = expr->body;
+    } else {
+        // 表达式体 Lambda - 需要自动返回
+        // 创建一个 return 语句包装表达式
+        auto returnStmt = ReturnStmt::create(expr->expression, 
+                                             expr->expression->line, 
+                                             expr->expression->column);
+        func->body = {returnStmt};
+    }
+    
+    return LoongValue::userFunction(func);
 }
 
 // 获取父目录

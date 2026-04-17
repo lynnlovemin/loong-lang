@@ -1,7 +1,7 @@
 // Loong HTTP 服务器标准库 - 静态文件服务模块
 // http/static.loong
 
-import http.utils
+import utils
 
 // ==================== 静态文件服务类 ====================
 

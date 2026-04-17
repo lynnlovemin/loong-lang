@@ -486,6 +486,11 @@ ExprPtr Parser::parseCall() {
 }
 
 ExprPtr Parser::parsePrimary() {
+    // 匿名函数: fn(params) { body }
+    if (check(TokenType::FN) && !isAtEnd()) {
+        return parseAnonymousFn();
+    }
+    
     if (match(TokenType::NIL)) {
         return LiteralExpr::createNil(previous().line, previous().column);
     }
@@ -510,28 +515,33 @@ ExprPtr Parser::parsePrimary() {
         return LiteralExpr::createChar(ch, previous().line, previous().column);
     }
     if (match(TokenType::IDENTIFIER)) {
+        // 检查是否是单参数省略括号的 Lambda: x -> body
+        if (match(TokenType::ARROW)) {
+            Token ident = tokens_[current_ - 2];  // 获取标识符 token
+            std::vector<std::string> params = {ident.value};
+            std::vector<std::pair<std::string, ExprPtr>> defaultParams;
+            return parseLambdaBody(params, defaultParams, ident.line, ident.column);
+        }
         return IdentifierExpr::create(previous().value, previous().line, previous().column);
     }
-    
+
     // this关键字
     if (match(TokenType::THIS)) {
         return ThisExpr::create(previous().line, previous().column);
     }
-    
+
     // super关键字
     if (match(TokenType::SUPER)) {
-        consume(TokenType::DOT, "期望 \'\' 访问父类方法");
+        consume(TokenType::DOT, "期望 \'.\' 访问父类方法");
         Token method = consume(TokenType::IDENTIFIER, "期望方法名");
         return SuperExpr::create(method.value, previous().line, previous().column);
     }
-    
-    // 分组表达式
+
+    // 分组表达式 或 Lambda: (expr) 或 (params) -> body
     if (match(TokenType::LPAREN)) {
-        ExprPtr expr = parseExpression();
-        consume(TokenType::RPAREN, "期望 ')'");
-        return GroupedExpr::create(expr, previous().line, previous().column);
+        return parseParenOrLambda();
     }
-    
+
     // 列表
     if (match(TokenType::LBRACKET)) {
         std::vector<ExprPtr> elements;
@@ -540,25 +550,25 @@ ExprPtr Parser::parsePrimary() {
                 elements.push_back(parseExpression());
             } while (match(TokenType::COMMA));
         }
-        consume(TokenType::RBRACKET, "期望 ']'");
+        consume(TokenType::RBRACKET, "期望 \']\'");
         return ListExpr::create(elements, previous().line, previous().column);
     }
-    
+
     // 字典
     if (match(TokenType::LBRACE)) {
         std::vector<std::pair<ExprPtr, ExprPtr>> pairs;
         if (!check(TokenType::RBRACE)) {
             do {
                 ExprPtr key = parseExpression();
-                consume(TokenType::COLON, "期望 ':'");
+                consume(TokenType::COLON, "期望 \':\'");
                 ExprPtr value = parseExpression();
                 pairs.push_back({key, value});
             } while (match(TokenType::COMMA));
         }
-        consume(TokenType::RBRACE, "期望 '}'");
+        consume(TokenType::RBRACE, "期望 \'}\'");
         return DictExpr::create(pairs, previous().line, previous().column);
     }
-    
+
     error(peek(), "期望表达式");
     return nullptr;
 }
@@ -634,7 +644,7 @@ StmtPtr Parser::parseClassStmt() {
     }
     
     // 类体
-    consume(TokenType::LBRACE, "期望 \'\' 开始类体");
+    consume(TokenType::LBRACE, "期望 '{' 开始类体");
     std::vector<StmtPtr> body;
     while (!check(TokenType::RBRACE) && !isAtEnd()) {
         // 类体内只能是函数定义
@@ -645,9 +655,215 @@ StmtPtr Parser::parseClassStmt() {
             break;
         }
     }
-    consume(TokenType::RBRACE, "期望 \'\' 结束类体");
+    consume(TokenType::RBRACE, "期望 \' }\' 结束类体");
     
     return ClassStmt::create(className, superClass, body, classToken.line, classToken.column);
+}
+
+// ==================== Lambda 和匿名函数解析 ====================
+
+// 解析括号表达式或 Lambda
+// (expr) 或 (params) -> body 或 () -> body
+ExprPtr Parser::parseParenOrLambda() {
+    int line = previous().line;
+    int column = previous().column;
+    
+    // 检查是否是空参数列表的 Lambda: () -> body
+    if (match(TokenType::RPAREN)) {
+        // 必须跟着 -> 才是 Lambda
+        if (match(TokenType::ARROW)) {
+            return parseLambdaBody({}, {}, line, column);
+        }
+        // 否则是错误
+        error(previous(), "期望表达式或 '->'");
+        return nullptr;
+    }
+    
+    // 检查是否可能是 Lambda 参数列表
+    // Lambda 参数列表的特征：
+    // 1. 全是标识符（可能带默认值）
+    // 2. 后面跟着 ) ->
+    // 我们需要前瞻判断
+    
+    // 保存当前位置用于回溯
+    size_t savedPos = current_;
+    bool isLambda = false;
+    std::vector<std::string> params;
+    std::vector<std::pair<std::string, ExprPtr>> defaultParams;
+    
+    // 尝试解析为参数列表
+    if (check(TokenType::IDENTIFIER)) {
+        // 可能是单参数 Lambda（无括号参数）或表达式
+        // 继续解析看看
+        Token first = advance();
+        
+        if (match(TokenType::RPAREN)) {
+            // (identifier)
+            if (match(TokenType::ARROW)) {
+                // (identifier) -> body : 单参数 Lambda
+                params.push_back(first.value);
+                return parseLambdaBody(params, defaultParams, line, column);
+            }
+            // 否则是分组表达式 (identifier)，需要回溯
+            current_ = savedPos;
+            ExprPtr expr = parseExpression();
+            consume(TokenType::RPAREN, "期望 ')'");
+            return GroupedExpr::create(expr, line, column);
+        }
+        
+        if (match(TokenType::COMMA)) {
+            // (identifier, ... 可能是多参数 Lambda
+            params.push_back(first.value);
+            
+            // 解析剩余参数
+            do {
+                Token param = consume(TokenType::IDENTIFIER, "期望参数名");
+                params.push_back(param.value);
+            } while (match(TokenType::COMMA));
+            
+            consume(TokenType::RPAREN, "期望 ')'");
+            
+            if (match(TokenType::ARROW)) {
+                return parseLambdaBody(params, defaultParams, line, column);
+            }
+            
+            // 不是 Lambda，报错
+            error(previous(), "期望 '->'");
+            return nullptr;
+        }
+        
+        if (match(TokenType::EQUAL)) {
+            // (identifier = defaultValue, ... 带默认值的 Lambda
+            ExprPtr defaultValue = parseExpression();
+            defaultParams.push_back({first.value, defaultValue});
+            
+            while (match(TokenType::COMMA)) {
+                Token param = consume(TokenType::IDENTIFIER, "期望参数名");
+                if (match(TokenType::EQUAL)) {
+                    ExprPtr defVal = parseExpression();
+                    defaultParams.push_back({param.value, defVal});
+                } else {
+                    error(param, "有默认值的参数后不能有无默认值的参数");
+                }
+            }
+            
+            consume(TokenType::RPAREN, "期望 ')'");
+            
+            if (match(TokenType::ARROW)) {
+                return parseLambdaBody(params, defaultParams, line, column);
+            }
+            
+            error(previous(), "期望 '->'");
+            return nullptr;
+        }
+        
+        // 其他情况，回溯并解析为分组表达式
+        current_ = savedPos;
+        ExprPtr expr = parseExpression();
+        consume(TokenType::RPAREN, "期望 ')'");
+        return GroupedExpr::create(expr, line, column);
+    }
+    
+    // 不是以标识符开头，解析为分组表达式
+    ExprPtr expr = parseExpression();
+    consume(TokenType::RPAREN, "期望 ')'");
+    return GroupedExpr::create(expr, line, column);
+}
+
+// 解析 Lambda 函数体
+ExprPtr Parser::parseLambdaBody(
+    const std::vector<std::string>& params,
+    const std::vector<std::pair<std::string, ExprPtr>>& defaultParams,
+    int line, int column) {
+    
+    // 检查是否是块体 { ... } 还是表达式体
+    if (match(TokenType::LBRACE)) {
+        // 块体 Lambda
+        std::vector<StmtPtr> body = parseBlock();
+        return LambdaExpr::createBlock(params, defaultParams, body, line, column);
+    } else {
+        // 表达式体 Lambda（自动返回）
+        ExprPtr expr = parseExpression();
+        return LambdaExpr::createExpression(params, defaultParams, expr, line, column);
+    }
+}
+
+// 解析匿名函数: fn(params) { body }
+ExprPtr Parser::parseAnonymousFn() {
+    Token fnToken = consume(TokenType::FN, "期望 'fn'");
+    int line = fnToken.line;
+    int column = fnToken.column;
+    
+    consume(TokenType::LPAREN, "期望 '('");
+    
+    std::vector<std::string> params;
+    std::vector<std::pair<std::string, ExprPtr>> defaultParams;
+    
+    if (!check(TokenType::RPAREN)) {
+        do {
+            Token param = consume(TokenType::IDENTIFIER, "期望参数名");
+            
+            // 检查是否有默认值
+            if (match(TokenType::EQUAL)) {
+                ExprPtr defaultValue = parseExpression();
+                defaultParams.push_back({param.value, defaultValue});
+            } else {
+                if (!defaultParams.empty()) {
+                    error(param, "有默认值的参数后不能有无默认值的参数");
+                }
+                params.push_back(param.value);
+            }
+        } while (match(TokenType::COMMA));
+    }
+    
+    consume(TokenType::RPAREN, "期望 ')'");
+    consume(TokenType::LBRACE, "期望 '{' 开始函数体");
+    
+    std::vector<StmtPtr> body = parseBlock();
+    
+    return LambdaExpr::createBlock(params, defaultParams, body, line, column);
+}
+
+// 解析 Lambda 参数列表
+std::pair<std::vector<std::string>, std::vector<std::pair<std::string, ExprPtr>>> 
+Parser::parseLambdaParams() {
+    std::vector<std::string> params;
+    std::vector<std::pair<std::string, ExprPtr>> defaultParams;
+    
+    if (!check(TokenType::RPAREN)) {
+        do {
+            Token param = consume(TokenType::IDENTIFIER, "期望参数名");
+            
+            if (match(TokenType::EQUAL)) {
+                ExprPtr defaultValue = parseExpression();
+                defaultParams.push_back({param.value, defaultValue});
+            } else {
+                if (!defaultParams.empty()) {
+                    error(param, "有默认值的参数后不能有无默认值的参数");
+                }
+                params.push_back(param.value);
+            }
+        } while (match(TokenType::COMMA));
+    }
+    
+    return {params, defaultParams};
+}
+
+// 解析 Lambda 表达式（用于单参数省略括号的情况）
+// x -> body
+ExprPtr Parser::parseLambdaExpr() {
+    int line = peek().line;
+    int column = peek().column;
+    
+    // 解析参数
+    Token param = consume(TokenType::IDENTIFIER, "期望参数名");
+    std::vector<std::string> params = {param.value};
+    std::vector<std::pair<std::string, ExprPtr>> defaultParams;
+    
+    // 期望 ->
+    consume(TokenType::ARROW, "期望 \'->\'");
+    
+    return parseLambdaBody(params, defaultParams, line, column);
 }
 
 } // namespace loong

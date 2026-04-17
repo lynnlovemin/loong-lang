@@ -71,6 +71,7 @@ private:
     LoongValue visitAssignExpr(AssignExpr* expr);
     LoongValue visitThisExpr(ThisExpr* expr);
     LoongValue visitSuperExpr(SuperExpr* expr);
+    LoongValue visitLambdaExpr(class LambdaExpr* expr);
     
     // 具体语句执行
     void visitExprStmt(ExprStmt* stmt);

@@ -1,7 +1,7 @@
 // Loong HTTP 服务器标准库 - 响应构建模块
 // http/response.loong
 
-import http.utils
+import utils
 
 // ==================== HttpResponse 类 ====================
 
