@@ -42,6 +42,7 @@ private:
     StmtPtr parseTryStmt();
     StmtPtr parseThrowStmt();
     StmtPtr parseClassStmt();
+    StmtPtr parseSwitchStmt();
     
     // 表达式解析
     ExprPtr parseExpression();

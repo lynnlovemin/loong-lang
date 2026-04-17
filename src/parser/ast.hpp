@@ -545,6 +545,38 @@ public:
     }
 };
 
+// Case子句
+class CaseClause {
+public:
+    ExprPtr value;              // case值（可为nullptr表示default）
+    std::vector<StmtPtr> body;  // case体
+    bool isDefault;             // 是否为default分支
+    
+    static CaseClause create(ExprPtr value, const std::vector<StmtPtr>& body, bool isDefault = false, int line = 1, int column = 1) {
+        CaseClause clause;
+        clause.value = value;
+        clause.body = body;
+        clause.isDefault = isDefault;
+        return clause;
+    }
+};
+
+// Switch语句
+class SwitchStmt : public Stmt {
+public:
+    ExprPtr expression;              // switch表达式
+    std::vector<CaseClause> cases;   // case子句列表
+    
+    static StmtPtr create(ExprPtr expression, const std::vector<CaseClause>& cases, int line = 1, int column = 1) {
+        auto stmt = std::make_shared<SwitchStmt>();
+        stmt->expression = expression;
+        stmt->cases = cases;
+        stmt->line = line;
+        stmt->column = column;
+        return stmt;
+    }
+};
+
 // This表达式
 class ThisExpr : public Expr {
 public:

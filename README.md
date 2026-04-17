@@ -1,4 +1,4 @@
-# Loong 编程语言 v1.3.0
+# Loong 编程语言 v1.3.1
 
 ## 简介
 
@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](loong-1.3.0-setup.exe)** (v1.3.0)
+📥 **[下载 Windows 安装包](loong-1.3.1-setup.exe)** (v1.3.1)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
@@ -137,7 +137,7 @@ fn greet(name = "World") {
 
 ### 匿名函数和 Lambda 表达式
 
-Loong v1.3.0 新增匿名函数和 Lambda 表达式支持
+Loong v1.3.1 新增匿名函数和 Lambda 表达式支持
 
 **匿名函数** - 使用 `fn` 关键字定义
 ```loong
@@ -256,6 +256,69 @@ if x > 10 {
     println("x is greater than 5");
 } else {
     println("x is 5 or less");
+}
+```
+
+### Switch/Case 语句
+Loong v1.3.1 新增 switch/case 语法支持，提供多分支选择结构。
+
+**基本语法**
+```loong
+switch day {
+    case "Monday":
+        println("Start of work week");
+    case "Friday":
+        println("Almost weekend");
+    case "Saturday":
+    case "Sunday":
+        println("Weekend!");
+    default:
+        println("Regular day");
+}
+```
+
+**支持的类型**
+- 数字（整数和浮点数）
+- 字符串
+- 字符
+- 布尔值
+- 大整数
+
+**特性**
+- 自动 break：每个 case 执行完后自动退出 switch（无需手动 break）
+- 支持 default 分支：当没有匹配的 case 时执行
+- 支持多 case 共享同一代码块
+- 类型安全：switch 值和 case 值必须类型相同才能匹配
+
+**数字示例**
+```loong
+val score = 85;
+
+switch score {
+    case 100:
+        println("Perfect!");
+    case 90:
+        println("Excellent");
+    case 80:
+        println("Good");
+    default:
+        println("Keep trying");
+}
+```
+
+**字符串示例**
+```loong
+val fruit = "apple";
+
+switch fruit {
+    case "apple":
+        println("It's an apple");
+    case "banana":
+        println("It's a banana");
+    case "orange":
+        println("It's an orange");
+    default:
+        println("Unknown fruit");
 }
 ```
 
@@ -898,6 +961,7 @@ loong/
 - [x] 更多标准库
 - [x] 异常处理
 - [x] 类和对象
+- [x] switch/case语法
 - [x] 网络请求
 - [x] 包管理器
 - [ ] 并行处理

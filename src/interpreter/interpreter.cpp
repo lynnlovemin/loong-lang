@@ -1070,6 +1070,8 @@ void Interpreter::execute(StmtPtr stmt) {
         visitThrowStmt(s);
     } else if (auto s = dynamic_cast<ClassStmt*>(stmt.get())) {
         visitClassStmt(s);
+    } else if (auto s = dynamic_cast<SwitchStmt*>(stmt.get())) {
+        visitSwitchStmt(s);
     }
 }
 
@@ -1325,6 +1327,57 @@ void Interpreter::visitClassStmt(ClassStmt* stmt) {
     
     // 注册类
     environment_->define(stmt->name, LoongValue::classVal(klass));
+}
+
+void Interpreter::visitSwitchStmt(SwitchStmt* stmt) {
+    // 计算switch表达式的值
+    LoongValue switchValue = evaluate(stmt->expression);
+    
+    bool matched = false;
+    bool hasDefault = false;
+    const CaseClause* defaultClause = nullptr;
+    
+    // 查找匹配的case或default
+    for (const auto& caseClause : stmt->cases) {
+        if (caseClause.isDefault) {
+            hasDefault = true;
+            defaultClause = &caseClause;
+            continue;
+        }
+        
+        // 计算case值
+        LoongValue caseValue = evaluate(caseClause.value);
+        
+        // 比较switch值和case值
+        bool isEqual = false;
+        if (switchValue.type == caseValue.type) {
+            if (switchValue.isNumber()) {
+                isEqual = (switchValue.numberValue == caseValue.numberValue);
+            } else if (switchValue.isBigint()) {
+                isEqual = (switchValue.bigintValue == caseValue.bigintValue);
+            } else if (switchValue.isString()) {
+                isEqual = (switchValue.stringValue == caseValue.stringValue);
+            } else if (switchValue.isChar()) {
+                isEqual = (switchValue.charValue == caseValue.charValue);
+            } else if (switchValue.isBool()) {
+                isEqual = (switchValue.boolValue == caseValue.boolValue);
+            } else if (switchValue.isNil()) {
+                isEqual = true;
+            }
+        }
+        
+        if (isEqual) {
+            matched = true;
+            // 执行匹配的case体
+            executeBlock(caseClause.body, environment_->createChild());
+            break;
+        }
+    }
+    
+    // 如果没有匹配的case但有default，执行default
+    if (!matched && hasDefault && defaultClause) {
+        executeBlock(defaultClause->body, environment_->createChild());
+    }
 }
 
 LoongValue Interpreter::visitThisExpr(ThisExpr* expr) {

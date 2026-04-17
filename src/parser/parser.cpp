@@ -63,6 +63,7 @@ void Parser::synchronize() {
             case TokenType::TRY:
             case TokenType::THROW:
             case TokenType::CLASS:
+            case TokenType::SWITCH:
                 return;
             default:
                 break;
@@ -104,6 +105,9 @@ StmtPtr Parser::parseStatement() {
     }
     if (match(TokenType::CONTINUE)) {
         return ContinueStmt::create(previous().line, previous().column);
+    }
+    if (match(TokenType::SWITCH)) {
+        return parseSwitchStmt();
     }
     
     // 表达式语句
@@ -861,9 +865,60 @@ ExprPtr Parser::parseLambdaExpr() {
     std::vector<std::pair<std::string, ExprPtr>> defaultParams;
     
     // 期望 ->
-    consume(TokenType::ARROW, "期望 \'->\'");
+    consume(TokenType::ARROW, "期望 '->'");
     
     return parseLambdaBody(params, defaultParams, line, column);
+}
+
+// ==================== Switch/Case解析 ====================
+
+StmtPtr Parser::parseSwitchStmt() {
+    Token switchToken = previous();
+    
+    // 解析switch表达式
+    ExprPtr expression = parseExpression();
+    consume(TokenType::LBRACE, "期望 '{' 开始switch块");
+    
+    std::vector<CaseClause> cases;
+    bool hasDefault = false;
+    
+    // 解析case和default分支
+    while (!check(TokenType::RBRACE) && !isAtEnd()) {
+        if (match(TokenType::CASE)) {
+            // 解析case值
+            ExprPtr caseValue = parseExpression();
+            consume(TokenType::COLON, "期望 ':' 开始case体");
+            
+            // 解析case体
+            std::vector<StmtPtr> caseBody;
+            while (!check(TokenType::CASE) && !check(TokenType::DEFAULT) && !check(TokenType::RBRACE) && !isAtEnd()) {
+                caseBody.push_back(parseStatement());
+            }
+            
+            cases.push_back(CaseClause::create(caseValue, caseBody, false, caseValue->line, caseValue->column));
+        } else if (match(TokenType::DEFAULT)) {
+            if (hasDefault) {
+                error(previous(), "switch语句只能有一个default分支");
+            }
+            hasDefault = true;
+            consume(TokenType::COLON, "期望 ':' 开始default体");
+            
+            // 解析default体
+            std::vector<StmtPtr> defaultBody;
+            while (!check(TokenType::RBRACE) && !isAtEnd()) {
+                defaultBody.push_back(parseStatement());
+            }
+            
+            cases.push_back(CaseClause::create(nullptr, defaultBody, true, previous().line, previous().column));
+        } else {
+            error(peek(), "switch块内只能包含case或default分支");
+            break;
+        }
+    }
+    
+    consume(TokenType::RBRACE, "期望 '}' 结束switch块");
+    
+    return SwitchStmt::create(expression, cases, switchToken.line, switchToken.column);
 }
 
 } // namespace loong

@@ -34,7 +34,10 @@ const std::unordered_map<std::string, TokenType> keywords = {
     {"class", TokenType::CLASS},
     {"this", TokenType::THIS},
     {"self", TokenType::THIS},  // self 作为 this 的别名
-    {"super", TokenType::SUPER}
+    {"super", TokenType::SUPER},
+    {"switch", TokenType::SWITCH},
+    {"case", TokenType::CASE},
+    {"default", TokenType::DEFAULT}
 };
 
 Lexer::Lexer(const std::string& source)

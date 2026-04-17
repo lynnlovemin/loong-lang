@@ -44,6 +44,11 @@ enum class TokenType {
     THIS,           // this
     SUPER,          // super
 
+    // switch/case
+    SWITCH,         // switch
+    CASE,           // case
+    DEFAULT,        // default
+
     // 运算符号
     PLUS,           // +
     MINUS,          // -
@@ -137,6 +142,9 @@ struct Token {
             case TokenType::CLASS: return "CLASS";
             case TokenType::THIS: return "THIS";
             case TokenType::SUPER: return "SUPER";
+            case TokenType::SWITCH: return "SWITCH";
+            case TokenType::CASE: return "CASE";
+            case TokenType::DEFAULT: return "DEFAULT";
             case TokenType::PLUS: return "PLUS";
             case TokenType::MINUS: return "MINUS";
             case TokenType::STAR: return "STAR";

@@ -1,0 +1,229 @@
+// Loong 编程语言 v1.3.1 - Switch/Case 语法完整测试
+
+println("=== Loong v1.3.1 Switch/Case 语法测试 ===\n");
+
+// ==================== 测试 1: 数字类型 ====================
+println("【测试 1】数字类型 switch/case");
+
+val testNumber = fn(num) {
+    switch num {
+        case 1:
+            println("  数字是 1");
+        case 2:
+            println("  数字是 2");
+        case 3:
+            println("  数字是 3");
+        default:
+            println("  数字不是 1, 2, 或 3");
+    }
+};
+
+testNumber(1);
+testNumber(2);
+testNumber(3);
+testNumber(10);
+
+// ==================== 测试 2: 字符串类型 ====================
+println("\n【测试 2】字符串类型 switch/case");
+
+val testString = fn(str) {
+    switch str {
+        case "apple":
+            println("  水果: 苹果");
+        case "banana":
+            println("  水果: 香蕉");
+        case "orange":
+            println("  水果: 橙子");
+        default:
+            println("  未知水果");
+    }
+};
+
+testString("apple");
+testString("banana");
+testString("grape");
+
+// ==================== 测试 3: 字符类型 ====================
+println("\n【测试 3】字符类型 switch/case");
+
+val testChar = fn(ch) {
+    switch ch {
+        case 'A':
+            println("  字符是 A");
+        case 'B':
+            println("  字符是 B");
+        case 'C':
+            println("  字符是 C");
+        default:
+            println("  字符不是 A, B, 或 C");
+    }
+};
+
+testChar('A');
+testChar('B');
+testChar('Z');
+
+// ==================== 测试 4: 布尔类型 ====================
+println("\n【测试 4】布尔类型 switch/case");
+
+val testBool = fn(b) {
+    switch b {
+        case true:
+            println("  布尔值是 true");
+        case false:
+            println("  布尔值是 false");
+    }
+};
+
+testBool(true);
+testBool(false);
+
+// ==================== 测试 5: default 分支 ====================
+println("\n【测试 5】default 分支测试");
+
+val testDefault = fn(num) {
+    switch num {
+        case 100:
+            println("  满分!");
+        case 90:
+            println("  优秀");
+        case 80:
+            println("  良好");
+        default:
+            println("  需要努力");
+    }
+};
+
+testDefault(100);
+testDefault(85);
+testDefault(60);
+
+// ==================== 测试 6: 表达式作为 switch 值 ====================
+println("\n【测试 6】表达式作为 switch 值");
+
+val x = 5;
+val y = 3;
+
+switch x + y {
+    case 8:
+        println("  5 + 3 = 8");
+    case 9:
+        println("  5 + 3 = 9");
+    default:
+        println("  其他结果");
+}
+
+// ==================== 测试 7: case 体内使用变量 ====================
+println("\n【测试 7】case 体内使用变量");
+
+val grade = 85;
+
+val getGradeResult = fn(g) {
+    switch g {
+        case 100:
+            return "完美";
+        case 90:
+            return "优秀";
+        case 80:
+            return "良好";
+        default:
+            return "一般";
+    }
+};
+
+val result = getGradeResult(grade);
+println("  成绩 " + grade + " 的评级是: " + result);
+
+// ==================== 测试 8: 嵌套 switch ====================
+println("\n【测试 8】嵌套 switch");
+
+val category = "fruit";
+val item = "apple";
+
+switch category {
+    case "fruit":
+        println("  类别: 水果");
+        switch item {
+            case "apple":
+                println("    具体: 苹果");
+            case "banana":
+                println("    具体: 香蕉");
+            default:
+                println("    具体: 其他水果");
+        }
+    case "vegetable":
+        println("  类别: 蔬菜");
+    default:
+        println("  类别: 未知");
+}
+
+// ==================== 测试 9: switch 在函数返回值中 ====================
+println("\n【测试 9】switch 在函数返回值中");
+
+val getDayName = fn(day) {
+    switch day {
+        case 1:
+            return "星期一";
+        case 2:
+            return "星期二";
+        case 3:
+            return "星期三";
+        case 4:
+            return "星期四";
+        case 5:
+            return "星期五";
+        case 6:
+            return "星期六";
+        case 7:
+            return "星期日";
+        default:
+            return "无效日期";
+    }
+};
+
+println("  1: " + getDayName(1));
+println("  5: " + getDayName(5));
+println("  7: " + getDayName(7));
+println("  0: " + getDayName(0));
+
+// ==================== 测试 10: switch 与循环结合 ====================
+println("\n【测试 10】switch 与循环结合");
+
+for val i in [1, 2, 3, 4, 5] {
+    switch i {
+        case 1:
+            println("  " + i + " 是第一个");
+        case 3:
+            println("  " + i + " 是中间");
+        case 5:
+            println("  " + i + " 是最后");
+        default:
+            println("  " + i + " 是普通");
+    }
+}
+
+// ==================== 测试 11: 浮点数 switch ====================
+println("\n【测试 11】浮点数 switch");
+
+val pi_approx = 3.14;
+
+switch pi_approx {
+    case 3.14:
+        println("  近似值: 3.14");
+    case 3.14159:
+        println("  精确值: 3.14159");
+    default:
+        println("  其他值");
+}
+
+// ==================== 测试 12: 空 switch (仅有 default) ====================
+println("\n【测试 12】仅有 default 的 switch");
+
+val unknown = "test";
+
+switch unknown {
+    default:
+        println("  总是执行 default");
+}
+
+println("\n=== 所有测试完成 ===");

@@ -88,6 +88,7 @@ private:
     void visitTryStmt(TryStmt* stmt);
     void visitThrowStmt(ThrowStmt* stmt);
     void visitClassStmt(ClassStmt* stmt);
+    void visitSwitchStmt(SwitchStmt* stmt);
     
     // 内置函数注册
     void registerBuiltinFunctions();
