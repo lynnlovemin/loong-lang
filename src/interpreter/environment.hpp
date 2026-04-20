@@ -4,6 +4,7 @@
 #include "value.hpp"
 #include <memory>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 
 namespace loong {
@@ -11,6 +12,7 @@ namespace loong {
 class Environment : public std::enable_shared_from_this<Environment> {
 private:
     std::unordered_map<std::string, LoongValue> values_;
+    std::unordered_set<std::string> constants_;
     std::shared_ptr<Environment> enclosing_;
 
 public:
@@ -22,6 +24,23 @@ public:
     // 定义变量
     void define(const std::string& name, const LoongValue& value) {
         values_[name] = value;
+    }
+    
+    // 定义常量
+    void defineConst(const std::string& name, const LoongValue& value) {
+        values_[name] = value;
+        constants_.insert(name);
+    }
+    
+    // 检查是否为常量
+    bool isConst(const std::string& name) const {
+        if (constants_.find(name) != constants_.end()) {
+            return true;
+        }
+        if (enclosing_) {
+            return enclosing_->isConst(name);
+        }
+        return false;
     }
     
     // 获取变量

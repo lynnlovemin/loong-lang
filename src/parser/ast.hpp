@@ -331,6 +331,22 @@ public:
     }
 };
 
+// 常量声明语句
+class ConstStmt : public Stmt {
+public:
+    std::string name;
+    ExprPtr initializer;
+    
+    static StmtPtr create(const std::string& name, ExprPtr init, int line = 1, int column = 1) {
+        auto stmt = std::make_shared<ConstStmt>();
+        stmt->name = name;
+        stmt->initializer = init;
+        stmt->line = line;
+        stmt->column = column;
+        return stmt;
+    }
+};
+
 // 函数声明语句
 class FnStmt : public Stmt {
 public:

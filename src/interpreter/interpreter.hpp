@@ -77,6 +77,7 @@ private:
     // 具体语句执行
     void visitExprStmt(ExprStmt* stmt);
     void visitValStmt(ValStmt* stmt);
+    void visitConstStmt(ConstStmt* stmt);
     void visitFnStmt(FnStmt* stmt);
     void visitReturnStmt(ReturnStmt* stmt);
     void visitIfStmt(IfStmt* stmt);

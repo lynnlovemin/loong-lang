@@ -91,6 +91,7 @@ Program Parser::parse() {
 
 StmtPtr Parser::parseStatement() {
     if (match(TokenType::VAL)) return parseValStmt();
+    if (match(TokenType::CONST)) return parseConstStmt();
     if (match(TokenType::FN)) return parseFnStmt();
     if (match(TokenType::IF)) return parseIfStmt();
     if (match(TokenType::WHILE)) return parseWhileStmt();
@@ -123,6 +124,15 @@ StmtPtr Parser::parseValStmt() {
     match(TokenType::SEMICOLON); // 分号可选
     
     return ValStmt::create(name.value, initializer, name.line, name.column);
+}
+
+StmtPtr Parser::parseConstStmt() {
+    Token name = consume(TokenType::IDENTIFIER, "期望常量名");
+    consume(TokenType::EQUAL, "期望 '='");
+    ExprPtr initializer = parseExpression();
+    match(TokenType::SEMICOLON); // 分号可选
+    
+    return ConstStmt::create(name.value, initializer, name.line, name.column);
 }
 
 StmtPtr Parser::parseFnStmt() {

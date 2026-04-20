@@ -9,6 +9,7 @@ namespace loong {
 // 关键字映射表 - 定义
 const std::unordered_map<std::string, TokenType> keywords = {
     {"val", TokenType::VAL},
+    {"const", TokenType::CONST},
     {"fn", TokenType::FN},
     {"if", TokenType::IF},
     {"else", TokenType::ELSE},

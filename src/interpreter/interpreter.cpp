@@ -990,6 +990,9 @@ LoongValue Interpreter::visitAssignExpr(AssignExpr* expr) {
         if (!environment_->exists(ident->name)) {
             LOONG_NAME_ERROR("未定义的变量: " + ident->name);
         }
+        if (environment_->isConst(ident->name)) {
+            LOONG_RUNTIME_ERROR("无法修改常量: " + ident->name);
+        }
         environment_->assign(ident->name, value);
         return value;
     }
@@ -1049,6 +1052,8 @@ void Interpreter::execute(StmtPtr stmt) {
         visitExprStmt(s);
     } else if (auto s = dynamic_cast<ValStmt*>(stmt.get())) {
         visitValStmt(s);
+    } else if (auto s = dynamic_cast<ConstStmt*>(stmt.get())) {
+        visitConstStmt(s);
     } else if (auto s = dynamic_cast<FnStmt*>(stmt.get())) {
         visitFnStmt(s);
     } else if (auto s = dynamic_cast<ReturnStmt*>(stmt.get())) {
@@ -1105,6 +1110,14 @@ void Interpreter::visitValStmt(ValStmt* stmt) {
         value = evaluate(stmt->initializer);
     }
     environment_->define(stmt->name, value);
+}
+
+void Interpreter::visitConstStmt(ConstStmt* stmt) {
+    LoongValue value = LoongValue::nil();
+    if (stmt->initializer) {
+        value = evaluate(stmt->initializer);
+    }
+    environment_->defineConst(stmt->name, value);
 }
 
 void Interpreter::visitFnStmt(FnStmt* stmt) {

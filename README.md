@@ -1,4 +1,4 @@
-# Loong 编程语言 v1.3.2
+# Loong 编程语言 v1.3.3
 
 ## 简介
 
@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](loong-1.3.2-setup.exe)** (v1.3.2)
+📥 **[下载 Windows 安装包](loong-1.3.3-setup.exe)** (v1.3.3)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
@@ -105,6 +105,37 @@ val list = [1, 2, 3];
 val dict = {"key": "value"};
 val ch = 'A';  // 字符类型
 ```
+
+### 常量声明
+新增 const 常量语法支持，用于定义不可修改的常量值。
+
+```loong
+// 基本用法
+const PI = 3.14159;
+const MAX_SIZE = 100;
+const APP_NAME = "MyApp";
+
+// 常量无法被修改，以下代码会报错：
+// PI = 3.14;  // 错误：无法修改常量
+
+// 常量支持所有类型
+const FLAG = true;
+const LIST = [1, 2, 3];
+const DICT = {"key": "value"};
+const CH = 'A';
+
+// 常量在作用域内有效
+fn example() {
+    const LOCAL_CONST = 42;
+    println(LOCAL_CONST);
+}
+```
+
+**特性**
+- 常量必须在声明时初始化
+- 常量一旦赋值就不能被修改
+- 常量支持所有数据类型
+- 常量遵循作用域规则
 
 ### 字符类型和ASCII码
 ```loong

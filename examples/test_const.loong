@@ -1,0 +1,181 @@
+// ============================================
+// const 常量特性测试
+// 测试新增的 const 常量语法支持
+// ============================================
+
+println("========== const 常量测试 ==========");
+
+// 1. 基本常量声明和使用
+println("\n--- 测试1: 基本常量声明 ---");
+const PI = 3.14159;
+const E = 2.71828;
+println("PI = " + str(PI));
+println("E = " + str(E));
+
+// 2. 不同类型的常量
+println("\n--- 测试2: 不同类型的常量 ---");
+const INT_CONST = 100;
+const FLOAT_CONST = 3.14;
+const STRING_CONST = "Hello, Loong!";
+const BOOL_CONST = true;
+const CHAR_CONST = 'A';
+const LIST_CONST = [1, 2, 3, 4, 5];
+const DICT_CONST = {"name": "Loong", "version": "1.3.3"};
+
+println("整数常量: " + str(INT_CONST));
+println("浮点常量: " + str(FLOAT_CONST));
+println("字符串常量: " + STRING_CONST);
+println("布尔常量: " + str(BOOL_CONST));
+println("字符常量: " + str(CHAR_CONST));
+println("列表常量: " + str(LIST_CONST));
+println("字典常量: " + str(DICT_CONST));
+
+// 3. 常量参与表达式运算
+println("\n--- 测试3: 常量参与表达式运算 ---");
+const RADIUS = 5;
+const AREA = PI * RADIUS * RADIUS;
+println("半径为5的圆面积: " + str(AREA));
+
+const A = 10;
+const B = 20;
+const SUM = A + B;
+const PRODUCT = A * B;
+println("A + B = " + str(SUM));
+println("A * B = " + str(PRODUCT));
+
+// 4. 常量在条件语句中使用
+println("\n--- 测试4: 常量在条件语句中使用 ---");
+const MAX_AGE = 18;
+const AGE = 20;
+
+if AGE >= MAX_AGE {
+    println("已成年");
+} else {
+    println("未成年");
+}
+
+// 5. 常量在循环中使用
+println("\n--- 测试5: 常量在循环中使用 ---");
+const MAX_COUNT = 5;
+for val i = 0; i < MAX_COUNT; i = i + 1 {
+    println("循环次数: " + str(i));
+}
+
+// 6. 常量在函数中使用
+println("\n--- 测试6: 函数中的常量 ---");
+const GLOBAL_CONST = "全局常量";
+
+fn testConstInFunction() {
+    const LOCAL_CONST = "局部常量";
+    println(LOCAL_CONST);
+    println(GLOBAL_CONST);
+    
+    const FUNC_RESULT = 42 * 2;
+    println("函数内计算结果: " + str(FUNC_RESULT));
+}
+
+testConstInFunction();
+
+// 7. 常量作用域测试
+println("\n--- 测试7: 常量作用域 ---");
+const OUTER_CONST = "外部常量";
+
+fn testScope() {
+    const INNER_CONST = "内部常量";
+    println("inner: " + INNER_CONST);
+    println("outer: " + OUTER_CONST);
+}
+
+testScope();
+
+// 8. 常量与变量混合使用
+println("\n--- 测试8: 常量与变量混合使用 ---");
+const BASE = 10;
+val multiplier = 3;
+const RESULT = BASE * multiplier;
+println("BASE * multiplier = " + str(RESULT));
+
+// 9. 常量作为函数参数
+println("\n--- 测试9: 常量作为函数参数 ---");
+const GREETING = "欢迎使用";
+
+fn greet(msg, name) {
+    return msg + ", " + name + "!";
+}
+
+println(greet(GREETING, "Loong"));
+
+// 10. 常量在类中使用
+println("\n--- 测试10: 常量在类中使用 ---");
+const CLASS_CONST = "类外常量";
+
+class TestClass {
+    fn __init__() {
+        self.value = 100;
+    }
+    
+    fn getValue() {
+        println(CLASS_CONST);
+        return self.value;
+    }
+}
+
+const obj = TestClass();
+println("对象值: " + str(obj.getValue()));
+
+// 11. 常量与三元运算符
+println("\n--- 测试11: 常量与三元运算符 ---");
+const THRESHOLD = 60;
+const SCORE = 85;
+const RESULT_STR = SCORE >= THRESHOLD ? "及格" : "不及格";
+println("成绩结果: " + RESULT_STR);
+
+// 12. 常量与逻辑运算
+println("\n--- 测试12: 常量与逻辑运算 ---");
+const TRUE_CONST = true;
+const FALSE_CONST = false;
+
+if TRUE_CONST && !FALSE_CONST {
+    println("逻辑运算正常");
+}
+
+// 13. 常量嵌套作用域
+println("\n--- 测试13: 常量嵌套作用域 ---");
+const LEVEL1 = "第一层";
+
+fn outer() {
+    const LEVEL2 = "第二层";
+    println(LEVEL1);
+    println(LEVEL2);
+    
+    fn inner() {
+        const LEVEL3 = "第三层";
+        println(LEVEL1);
+        println(LEVEL2);
+        println(LEVEL3);
+    }
+    
+    inner();
+}
+
+outer();
+
+// 14. 常量与列表/字典方法
+println("\n--- 测试14: 常量与列表/字典方法 ---");
+const CONST_LIST = [1, 2, 3];
+const CONST_DICT = {"a": 1, "b": 2};
+
+println("列表长度: " + str(CONST_LIST.len));
+println("字典键: " + str(CONST_DICT.keys()));
+println("字典值: " + str(CONST_DICT.values()));
+
+// 15. 常量与字符串方法
+println("\n--- 测试15: 常量与字符串方法 ---");
+const CONST_STR = "  Hello, Loong!  ";
+println("原始: '" + CONST_STR + "'");
+println("trim后: '" + CONST_STR.trim() + "'");
+println("upper: '" + CONST_STR.upper() + "'");
+println("lower: '" + CONST_STR.lower() + "'");
+
+println("\n========== 所有测试通过 ==========");
+println("注意：尝试修改常量的测试需要使用 try-catch 或在单独文件中运行");

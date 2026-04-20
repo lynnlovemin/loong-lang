@@ -20,6 +20,7 @@ enum class TokenType {
     // 标识符和关键词
     IDENTIFIER,     // 标识符
     VAL,            // val
+    CONST,          // const
     FN,             // fn
     IF,             // if
     ELSE,           // else
@@ -124,6 +125,7 @@ struct Token {
             case TokenType::NIL: return "NIL";
             case TokenType::IDENTIFIER: return "IDENTIFIER";
             case TokenType::VAL: return "VAL";
+            case TokenType::CONST: return "CONST";
             case TokenType::FN: return "FN";
             case TokenType::IF: return "IF";
             case TokenType::ELSE: return "ELSE";

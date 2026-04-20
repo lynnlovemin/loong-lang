@@ -33,6 +33,7 @@ private:
     // 语句解析
     StmtPtr parseStatement();
     StmtPtr parseValStmt();
+    StmtPtr parseConstStmt();
     StmtPtr parseFnStmt();
     StmtPtr parseIfStmt();
     StmtPtr parseWhileStmt();
