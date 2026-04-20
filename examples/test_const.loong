@@ -20,7 +20,7 @@ const STRING_CONST = "Hello, Loong!";
 const BOOL_CONST = true;
 const CHAR_CONST = 'A';
 const LIST_CONST = [1, 2, 3, 4, 5];
-const DICT_CONST = {"name": "Loong", "version": "1.3.3"};
+const DICT_CONST = {"name": "Loong", "version": "1.3.4"};
 
 println("整数常量: " + str(INT_CONST));
 println("浮点常量: " + str(FLOAT_CONST));

@@ -1,0 +1,378 @@
+// ============================================
+// val 无初始化 & 类型注解 特性测试
+// 新特性全覆盖测试
+// ============================================
+
+println("========== val 无初始化 & 类型注解 测试 ==========")
+
+// ===== 1. val 无初始化，默认 nil =====
+println("\n--- 测试1: val 无初始化 ---")
+val a
+val b
+println("a = " + str(a))  // nil
+println("b = " + str(b))  // nil
+println("a == nil: " + str(a == nil))  // true
+println("b == nil: " + str(b == nil))  // true
+
+// 无初始化后可以正常赋值
+a = 42
+b = "hello"
+println("a = " + str(a))  // 42
+println("b = " + str(b))  // hello
+
+// ===== 2. val 带类型无初始化 =====
+println("\n--- 测试2: val 带类型无初始化 ---")
+val c: number
+val d: string
+val e: bool
+val f: list
+val g: dict
+val h: char
+println("c (number) = " + str(c))  // nil
+println("d (string) = " + str(d))  // nil
+println("e (bool) = " + str(e))    // nil
+println("f (list) = " + str(f))    // nil
+println("g (dict) = " + str(g))    // nil
+println("h (char) = " + str(h))    // nil
+
+// 给带类型的变量赋正确类型的值
+c = 100
+d = "world"
+e = true
+f = [1, 2, 3]
+g = {"key": "value"}
+h = 'A'
+println("c = " + str(c))  // 100
+println("d = " + str(d))  // world
+println("e = " + str(e))  // true
+println("f = " + str(f))  // [1, 2, 3]
+println("g = " + str(g))  // {"key": "value"}
+println("h = " + str(h))  // A
+
+// ===== 3. val 带类型带初始化 =====
+println("\n--- 测试3: val 带类型带初始化 ---")
+val x: number = 10
+val y: string = "Loong"
+val z: bool = true
+val ch: char = 'Z'
+val arr: list = [4, 5, 6]
+val obj: dict = {"name": "test"}
+println("x = " + str(x))    // 10
+println("y = " + str(y))    // Loong
+println("z = " + str(z))    // true
+println("ch = " + str(ch))  // Z
+println("arr = " + str(arr))  // [4, 5, 6]
+println("obj = " + str(obj))  // {"name": "test"}
+
+// ===== 4. val 无类型带初始化（现有语法兼容） =====
+println("\n--- 测试4: val 无类型带初始化（兼容性） ---")
+val p = 3.14
+val q = "old syntax"
+val r = [7, 8, 9]
+println("p = " + str(p))  // 3.14
+println("q = " + str(q))  // old syntax
+println("r = " + str(r))  // [7, 8, 9]
+
+// 无类型变量可以赋值任何类型
+p = "now a string"
+q = 123
+println("p = " + str(p))  // now a string
+println("q = " + str(q))  // 123
+
+// ===== 5. const 带类型 =====
+println("\n--- 测试5: const 带类型 ---")
+const PI: number = 3.14159
+const GREETING: string = "Hello, Loong!"
+const IS_ACTIVE: bool = true
+const LETTER: char = 'L'
+const ITEMS: list = [10, 20, 30]
+const CONFIG: dict = {"debug": "false"}
+println("PI = " + str(PI))
+println("GREETING = " + GREETING)
+println("IS_ACTIVE = " + str(IS_ACTIVE))
+println("LETTER = " + str(LETTER))
+println("ITEMS = " + str(ITEMS))
+println("CONFIG = " + str(CONFIG))
+
+// ===== 6. const 无类型（现有语法兼容） =====
+println("\n--- 测试6: const 无类型（兼容性） ---")
+const MAX = 999
+const LABEL = "old const"
+println("MAX = " + str(MAX))
+println("LABEL = " + LABEL)
+
+// ===== 7. bigint 类型注解 =====
+println("\n--- 测试7: bigint 类型注解 ---")
+val big: bigint = 12345678901234567890
+println("big = " + str(big))
+
+// ===== 8. function 类型注解 =====
+println("\n--- 测试8: function 类型注解 ---")
+fn myFunc() {
+    return "I am a function"
+}
+val callback: function = myFunc
+println("callback() = " + callback())
+
+// Lambda 赋值给 function 类型变量
+val adder: function = (a, b) -> a + b
+println("adder(3, 4) = " + str(adder(3, 4)))
+
+// ===== 9. 类型检查 - 初始化类型不匹配 =====
+println("\n--- 测试9: 初始化类型不匹配 ---")
+try {
+    // 这会在解释器层面报错，因为类型不匹配
+    // 需要用代码字符串方式测试，这里用 try-catch
+    val wrong: number = "not a number"
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获初始化类型错误: " + str(err))
+}
+
+try {
+    val wrong2: string = 42
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获初始化类型错误: " + str(err))
+}
+
+try {
+    val wrong3: bool = "true"
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获初始化类型错误: " + str(err))
+}
+
+try {
+    val wrong4: list = "not a list"
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获初始化类型错误: " + str(err))
+}
+
+try {
+    val wrong5: dict = [1, 2, 3]
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获初始化类型错误: " + str(err))
+}
+
+// ===== 10. 类型检查 - 赋值类型不匹配 =====
+println("\n--- 测试10: 赋值类型不匹配 ---")
+val num: number = 10
+
+try {
+    num = "hello"
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获赋值类型错误(number <- string): " + str(err))
+}
+
+val str_var: string = "test"
+try {
+    str_var = 42
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获赋值类型错误(string <- number): " + str(err))
+}
+
+val bool_var: bool = true
+try {
+    bool_var = "true"
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获赋值类型错误(bool <- string): " + str(err))
+}
+
+val list_var: list = [1, 2]
+try {
+    list_var = "not list"
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获赋值类型错误(list <- string): " + str(err))
+}
+
+val dict_var: dict = {"a": 1}
+try {
+    dict_var = [1, 2]
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获赋值类型错误(dict <- list): " + str(err))
+}
+
+// ===== 11. 赋值类型正确（验证不误报） =====
+println("\n--- 测试11: 赋值类型正确不误报 ---")
+num = 20
+println("num = " + str(num))  // 20
+num = 3.14
+println("num = " + str(num))  // 3.14
+
+str_var = "new value"
+println("str_var = " + str_var)
+
+bool_var = false
+println("bool_var = " + str(bool_var))
+
+list_var = [10, 20, 30]
+println("list_var = " + str(list_var))
+
+dict_var = {"b": 2, "c": 3}
+println("dict_var = " + str(dict_var))
+
+// ===== 12. nil 赋值给有类型的变量（nil 兼容任何类型） =====
+println("\n--- 测试12: nil 赋值给有类型变量 ---")
+val typed_num: number = 42
+typed_num = nil
+println("typed_num after nil = " + str(typed_num))  // nil
+
+// 再赋回正确类型
+typed_num = 100
+println("typed_num after reassign = " + str(typed_num))  // 100
+
+// ===== 13. const 带类型初始化不匹配 =====
+println("\n--- 测试13: const 带类型初始化不匹配 ---")
+try {
+    const BAD_CONST: number = "not number"
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获const类型错误: " + str(err))
+}
+
+// ===== 14. const 修改保护 =====
+println("\n--- 测试14: const 修改保护 ---")
+const FIXED: number = 42
+try {
+    FIXED = 100
+    println("错误：应该抛出修改常量错误！")
+} catch (err) {
+    println("捕获常量修改错误: " + str(err))
+}
+
+// ===== 15. 作用域中的类型变量 =====
+println("\n--- 测试15: 作用域中的类型变量 ---")
+val outer_val: number = 10
+
+fn testScope() {
+    val inner_val: string = "inner"
+    println("inner_val = " + inner_val)
+    println("outer_val = " + str(outer_val))
+    
+    // 嵌套作用域
+    fn nested() {
+        val deep_val: bool = true
+        println("deep_val = " + str(deep_val))
+        println("inner_val = " + inner_val)
+        println("outer_val = " + str(outer_val))
+    }
+    nested()
+}
+testScope()
+
+// ===== 16. 函数中使用类型变量 =====
+println("\n--- 测试16: 函数中使用类型变量 ---")
+fn calculate() {
+    val result: number = 0
+    val items: list = [1, 2, 3, 4, 5]
+    
+    for val i = 0; i < items.len; i = i + 1 {
+        result = result + items[i]
+    }
+    
+    return result
+}
+println("sum = " + str(calculate()))  // 15
+
+// ===== 17. 类中使用类型变量 =====
+println("\n--- 测试17: 类中使用类型变量 ---")
+class TypedClass {
+    fn __init__(name, value) {
+        self.name = name
+        self.value = value
+    }
+    
+    fn describe() {
+        val desc: string = "Name: " + self.name + ", Value: " + str(self.value)
+        return desc
+    }
+}
+
+val instance = TypedClass("test", 42)
+println(instance.describe())
+
+// ===== 18. 循环中的类型变量 =====
+println("\n--- 测试18: 循环中的类型变量 ---")
+val total: number = 0
+for val i: number = 0; i < 5; i = i + 1 {
+    total = total + i
+}
+println("total = " + str(total))  // 10
+
+// while 循环
+val count: number = 3
+while count > 0 {
+    println("count = " + str(count))
+    count = count - 1
+}
+
+// ===== 19. for-in 循环中的无初始化 val =====
+println("\n--- 测试19: for-in 循环 ---")
+val sum: number = 0
+for val item in [10, 20, 30] {
+    sum = sum + item
+}
+println("sum = " + str(sum))  // 60
+
+// ===== 20. 三元运算符与类型变量 =====
+println("\n--- 测试20: 三元运算符与类型变量 ---")
+val score: number = 85
+val grade: string = score >= 60 ? "及格" : "不及格"
+println("grade = " + grade)  // 及格
+
+// ===== 21. 复杂表达式初始化 =====
+println("\n--- 测试21: 复杂表达式初始化 ---")
+val computed: number = (10 + 20) * 3 - 5
+println("computed = " + str(computed))  // 85
+
+const COMPUTED_CONST: number = 2 * 3 + 4
+println("COMPUTED_CONST = " + str(COMPUTED_CONST))  // 10
+
+// ===== 22. 混合使用有类型和无类型变量 =====
+println("\n--- 测试22: 混合使用 ---")
+val typed: number = 10
+val untyped = "anything"
+val uninit
+
+println("typed = " + str(typed))
+println("untyped = " + str(untyped))
+println("uninit = " + str(uninit))
+
+typed = 20
+untyped = 42        // 无类型变量可以赋任何值
+uninit = [1, 2, 3]  // 无初始化变量可以赋任何值
+
+println("typed = " + str(typed))
+println("untyped = " + str(untyped))
+println("uninit = " + str(uninit))
+
+// ===== 23. 多个无初始化变量连续声明 =====
+println("\n--- 测试23: 多个无初始化变量 ---")
+val v1
+val v2
+val v3
+println("v1=" + str(v1) + " v2=" + str(v2) + " v3=" + str(v3))
+
+v1 = 1
+v2 = "two"
+v3 = true
+println("v1=" + str(v1) + " v2=" + str(v2) + " v3=" + str(v3))
+
+// ===== 24. 未知类型名报错测试 =====
+println("\n--- 测试24: 未知类型名 ---")
+try {
+    val bad: integer = 10
+    println("错误：应该抛出类型错误！")
+} catch (err) {
+    println("捕获未知类型错误: " + str(err))
+}
+
+println("\n========== 所有测试完成 ==========")

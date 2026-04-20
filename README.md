@@ -1,4 +1,4 @@
-# Loong 编程语言 v1.3.3
+# Loong 编程语言 v1.3.4
 
 ## 简介
 
@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](loong-1.3.3-setup.exe)** (v1.3.3)
+📥 **[下载 Windows 安装包](loong-1.3.4-setup.exe)** (v1.3.4)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
@@ -104,7 +104,37 @@ val flag = true;
 val list = [1, 2, 3];
 val dict = {"key": "value"};
 val ch = 'A';  // 字符类型
+
+// val 可以不初始化，默认为 nil
+val a;
+val b;
+
+// 指定变量类型
+val x: number = 10;
+val msg: string = "hello";
+val ok: bool = true;
+val items: list = [1, 2, 3];
+
+// 带类型注解但不初始化，默认为 nil
+val count: number;
+
+// 类型检查：赋值时验证类型匹配
+val n: number = 42;
+n = 100;       // OK
+// n = "hello";  // 错误：类型不匹配
 ```
+
+**支持的类型名**
+| 类型名 | 说明 |
+|--------|------|
+| `number` | 数字（整数和浮点数） |
+| `string` | 字符串 |
+| `bool` | 布尔值 |
+| `char` | 字符 |
+| `list` | 列表 |
+| `dict` | 字典 |
+| `bigint` | 大整数 |
+| `function` | 函数 |
 
 ### 常量声明
 新增 const 常量语法支持，用于定义不可修改的常量值。
@@ -124,6 +154,11 @@ const LIST = [1, 2, 3];
 const DICT = {"key": "value"};
 const CH = 'A';
 
+// 常量支持类型注解
+const PI_TYPED: number = 3.14159;
+const GREETING: string = "Hello";
+const MAX: number = 100;
+
 // 常量在作用域内有效
 fn example() {
     const LOCAL_CONST = 42;
@@ -136,6 +171,7 @@ fn example() {
 - 常量一旦赋值就不能被修改
 - 常量支持所有数据类型
 - 常量遵循作用域规则
+- 常量支持类型注解（可选）
 
 ### 字符类型和ASCII码
 ```loong
@@ -1048,6 +1084,7 @@ loong/
 - [x] elif多分支解析修复
 - [x] 列表/字典/字符串方法（push/pop/keys/values等）
 - [x] 匿名函数和 Lambda 表达式
+- [x] val 无初始化声明和类型注解
 
 ## 许可证
 

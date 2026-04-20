@@ -319,11 +319,13 @@ public:
 class ValStmt : public Stmt {
 public:
     std::string name;
+    std::string typeName;  // 类型注解（空表示无类型注解）
     ExprPtr initializer;
     
-    static StmtPtr create(const std::string& name, ExprPtr init, int line = 1, int column = 1) {
+    static StmtPtr create(const std::string& name, ExprPtr init, int line = 1, int column = 1, const std::string& typeName = "") {
         auto stmt = std::make_shared<ValStmt>();
         stmt->name = name;
+        stmt->typeName = typeName;
         stmt->initializer = init;
         stmt->line = line;
         stmt->column = column;
@@ -335,11 +337,13 @@ public:
 class ConstStmt : public Stmt {
 public:
     std::string name;
+    std::string typeName;  // 类型注解（空表示无类型注解）
     ExprPtr initializer;
     
-    static StmtPtr create(const std::string& name, ExprPtr init, int line = 1, int column = 1) {
+    static StmtPtr create(const std::string& name, ExprPtr init, int line = 1, int column = 1, const std::string& typeName = "") {
         auto stmt = std::make_shared<ConstStmt>();
         stmt->name = name;
+        stmt->typeName = typeName;
         stmt->initializer = init;
         stmt->line = line;
         stmt->column = column;

@@ -62,6 +62,43 @@ static bool isNumericOrChar(const LoongValue& v) {
     return v.isNumber() || v.isBigint() || v.isChar();
 }
 
+// 类型名称与值类型匹配检查
+static bool checkTypeMatch(const std::string& typeName, const LoongValue& value) {
+    if (typeName.empty()) return true;  // 无类型注解，不检查
+    if (value.isNil()) return true;     // nil 与任何类型兼容
+    
+    if (typeName == "number") return value.isNumber();
+    if (typeName == "string") return value.isString();
+    if (typeName == "bool") return value.isBool();
+    if (typeName == "char") return value.isChar();
+    if (typeName == "list") return value.isList();
+    if (typeName == "dict") return value.isDict();
+    if (typeName == "bigint") return value.isBigint();
+    if (typeName == "function") return value.isFunction() || value.isBuiltinFunction();
+    
+    return false;  // 未知类型名
+}
+
+// 获取值的类型名称字符串
+static std::string getValueTypeName(const LoongValue& value) {
+    switch (value.type) {
+        case ValueType::NIL: return "nil";
+        case ValueType::BOOL: return "bool";
+        case ValueType::NUMBER: return "number";
+        case ValueType::BIGINT: return "bigint";
+        case ValueType::CHAR: return "char";
+        case ValueType::STRING: return "string";
+        case ValueType::LIST: return "list";
+        case ValueType::DICT: return "dict";
+        case ValueType::FUNCTION: return "function";
+        case ValueType::BUILTIN_FUNCTION: return "function";
+        case ValueType::CLASS: return "class";
+        case ValueType::INSTANCE: return "instance";
+        case ValueType::BOUND_METHOD: return "function";
+        default: return "unknown";
+    }
+}
+
 // 执行加法运算（支持 NUMBER 和 BIGINT）
 static LoongValue addValues(const LoongValue& left, const LoongValue& right) {
     // 如果两边都是普通数字且结果不会溢出，使用 double
@@ -993,6 +1030,11 @@ LoongValue Interpreter::visitAssignExpr(AssignExpr* expr) {
         if (environment_->isConst(ident->name)) {
             LOONG_RUNTIME_ERROR("无法修改常量: " + ident->name);
         }
+        // 类型检查：如果变量有类型注解，验证赋值类型匹配
+        std::string varType = environment_->getType(ident->name);
+        if (!varType.empty() && !checkTypeMatch(varType, value)) {
+            LOONG_TYPE_ERROR("类型不匹配: 变量 '" + ident->name + "' 声明为 " + varType + " 类型，但赋值为 " + getValueTypeName(value) + " 类型");
+        }
         environment_->assign(ident->name, value);
         return value;
     }
@@ -1109,7 +1151,15 @@ void Interpreter::visitValStmt(ValStmt* stmt) {
     if (stmt->initializer) {
         value = evaluate(stmt->initializer);
     }
-    environment_->define(stmt->name, value);
+    
+    // 类型检查：如果有类型注解且有初始化值，验证类型匹配
+    if (!stmt->typeName.empty() && stmt->initializer) {
+        if (!checkTypeMatch(stmt->typeName, value)) {
+            LOONG_TYPE_ERROR("类型不匹配: 变量 '" + stmt->name + "' 声明为 " + stmt->typeName + " 类型，但初始化值为 " + getValueTypeName(value) + " 类型");
+        }
+    }
+    
+    environment_->defineWithType(stmt->name, value, stmt->typeName);
 }
 
 void Interpreter::visitConstStmt(ConstStmt* stmt) {
@@ -1117,7 +1167,15 @@ void Interpreter::visitConstStmt(ConstStmt* stmt) {
     if (stmt->initializer) {
         value = evaluate(stmt->initializer);
     }
-    environment_->defineConst(stmt->name, value);
+    
+    // 类型检查：如果有类型注解，验证类型匹配
+    if (!stmt->typeName.empty()) {
+        if (!checkTypeMatch(stmt->typeName, value)) {
+            LOONG_TYPE_ERROR("类型不匹配: 常量 '" + stmt->name + "' 声明为 " + stmt->typeName + " 类型，但初始化值为 " + getValueTypeName(value) + " 类型");
+        }
+    }
+    
+    environment_->defineConstWithType(stmt->name, value, stmt->typeName);
 }
 
 void Interpreter::visitFnStmt(FnStmt* stmt) {

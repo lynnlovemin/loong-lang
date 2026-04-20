@@ -13,6 +13,7 @@ class Environment : public std::enable_shared_from_this<Environment> {
 private:
     std::unordered_map<std::string, LoongValue> values_;
     std::unordered_set<std::string> constants_;
+    std::unordered_map<std::string, std::string> types_;  // 变量类型注解
     std::shared_ptr<Environment> enclosing_;
 
 public:
@@ -30,6 +31,35 @@ public:
     void defineConst(const std::string& name, const LoongValue& value) {
         values_[name] = value;
         constants_.insert(name);
+    }
+    
+    // 定义带类型注解的变量
+    void defineWithType(const std::string& name, const LoongValue& value, const std::string& typeName) {
+        values_[name] = value;
+        if (!typeName.empty()) {
+            types_[name] = typeName;
+        }
+    }
+    
+    // 定义带类型注解的常量
+    void defineConstWithType(const std::string& name, const LoongValue& value, const std::string& typeName) {
+        values_[name] = value;
+        constants_.insert(name);
+        if (!typeName.empty()) {
+            types_[name] = typeName;
+        }
+    }
+    
+    // 获取变量的类型注解
+    std::string getType(const std::string& name) const {
+        auto it = types_.find(name);
+        if (it != types_.end()) {
+            return it->second;
+        }
+        if (enclosing_) {
+            return enclosing_->getType(name);
+        }
+        return "";
     }
     
     // 检查是否为常量

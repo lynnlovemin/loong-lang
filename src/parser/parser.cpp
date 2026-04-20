@@ -119,20 +119,41 @@ StmtPtr Parser::parseStatement() {
 
 StmtPtr Parser::parseValStmt() {
     Token name = consume(TokenType::IDENTIFIER, "期望变量名");
-    consume(TokenType::EQUAL, "期望 '='");
-    ExprPtr initializer = parseExpression();
+    
+    // 可选类型注解: val name: type
+    std::string typeName;
+    if (match(TokenType::COLON)) {
+        Token typeToken = consume(TokenType::IDENTIFIER, "期望类型名");
+        typeName = typeToken.value;
+    }
+    
+    // 可选初始化: val name [: type] [= expr]
+    ExprPtr initializer = nullptr;
+    if (match(TokenType::EQUAL)) {
+        initializer = parseExpression();
+    }
+    
     match(TokenType::SEMICOLON); // 分号可选
     
-    return ValStmt::create(name.value, initializer, name.line, name.column);
+    return ValStmt::create(name.value, initializer, name.line, name.column, typeName);
 }
 
 StmtPtr Parser::parseConstStmt() {
     Token name = consume(TokenType::IDENTIFIER, "期望常量名");
-    consume(TokenType::EQUAL, "期望 '='");
+    
+    // 可选类型注解: const name: type
+    std::string typeName;
+    if (match(TokenType::COLON)) {
+        Token typeToken = consume(TokenType::IDENTIFIER, "期望类型名");
+        typeName = typeToken.value;
+    }
+    
+    // const 必须初始化
+    consume(TokenType::EQUAL, "常量必须初始化，期望 '='");
     ExprPtr initializer = parseExpression();
     match(TokenType::SEMICOLON); // 分号可选
     
-    return ConstStmt::create(name.value, initializer, name.line, name.column);
+    return ConstStmt::create(name.value, initializer, name.line, name.column, typeName);
 }
 
 StmtPtr Parser::parseFnStmt() {
@@ -221,6 +242,13 @@ StmtPtr Parser::parseForStmt() {
         // 可能是 for-in 或传统 for 的变量初始化
         Token varName = consume(TokenType::IDENTIFIER, "期望变量名");
         
+        // 可选类型注解: for val i: type ...
+        std::string typeName;
+        if (match(TokenType::COLON)) {
+            Token typeToken = consume(TokenType::IDENTIFIER, "期望类型名");
+            typeName = typeToken.value;
+        }
+        
         if (match(TokenType::IN)) {
             // for-in 循环
             ExprPtr iterable = parseExpression();
@@ -230,7 +258,7 @@ StmtPtr Parser::parseForStmt() {
             return ForInStmt::create(varName.value, iterable, body, varName.line, varName.column);
         }
         
-        // 传统 for 循环: for val i = init; cond; update { body }
+        // 传统 for 循环: for val i [: type] = init; cond; update { body }
         consume(TokenType::EQUAL, "期望 '='");
         ExprPtr initValue = parseExpression();
         consume(TokenType::SEMICOLON, "期望 ';'");
@@ -250,7 +278,7 @@ StmtPtr Parser::parseForStmt() {
         std::vector<StmtPtr> body = parseBlock();
         
         // 创建变量声明语句
-        StmtPtr initializer = ValStmt::create(varName.value, initValue, varName.line, varName.column);
+        StmtPtr initializer = ValStmt::create(varName.value, initValue, varName.line, varName.column, typeName);
         
         return ForStmt::create(initializer, condition, increment, body, varName.line, varName.column);
     }
