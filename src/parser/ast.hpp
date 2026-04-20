@@ -602,6 +602,24 @@ public:
     }
 };
 
+// 三元表达式
+class TernaryExpr : public Expr {
+public:
+    ExprPtr condition;     // 条件表达式
+    ExprPtr thenExpr;      // 条件为真时的表达式
+    ExprPtr elseExpr;      // 条件为假时的表达式
+    
+    static ExprPtr create(ExprPtr condition, ExprPtr thenExpr, ExprPtr elseExpr, int line = 1, int column = 1) {
+        auto expr = std::make_shared<TernaryExpr>();
+        expr->condition = condition;
+        expr->thenExpr = thenExpr;
+        expr->elseExpr = elseExpr;
+        expr->line = line;
+        expr->column = column;
+        return expr;
+    }
+};
+
 // 程序根节点
 class Program {
 public:

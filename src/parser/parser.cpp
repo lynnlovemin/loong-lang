@@ -321,11 +321,25 @@ ExprPtr Parser::parseExpression() {
 }
 
 ExprPtr Parser::parseAssignment() {
-    ExprPtr expr = parseOr();
+    ExprPtr expr = parseTernary();
     
     if (match(TokenType::EQUAL)) {
         ExprPtr value = parseAssignment();
         return AssignExpr::create(expr, value, previous().line, previous().column);
+    }
+    
+    return expr;
+}
+
+ExprPtr Parser::parseTernary() {
+    ExprPtr expr = parseOr();
+    
+    if (match(TokenType::QUESTION)) {
+        Token questionToken = previous();
+        ExprPtr thenExpr = parseOr();
+        consume(TokenType::COLON, "期望 ':' 在三元运算符中");
+        ExprPtr elseExpr = parseTernary();
+        return TernaryExpr::create(expr, thenExpr, elseExpr, questionToken.line, questionToken.column);
     }
     
     return expr;

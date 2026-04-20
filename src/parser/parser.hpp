@@ -47,6 +47,7 @@ private:
     // 表达式解析
     ExprPtr parseExpression();
     ExprPtr parseAssignment();
+    ExprPtr parseTernary();
     ExprPtr parseOr();
     ExprPtr parseAnd();
     ExprPtr parseBitOr();

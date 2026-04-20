@@ -1,0 +1,145 @@
+// 三元运算符语法完整测试
+
+println("=== 三元运算符语法测试 ===\n");
+
+// ==================== 测试 1: 基本三元运算符 ====================
+println("【测试 1】基本三元运算符");
+
+val age = 20;
+val status = age >= 18 ? "成年" : "未成年";
+println("  年龄 " + age + ": " + status);
+
+val age2 = 15;
+val status2 = age2 >= 18 ? "成年" : "未成年";
+println("  年龄 " + age2 + ": " + status2);
+
+// ==================== 测试 2: 数字比较 ====================
+println("\n【测试 2】数字比较");
+
+val x = 10;
+val y = 20;
+val max = x > y ? x : y;
+println("  " + x + " 和 " + y + " 的最大值: " + max);
+
+val min = x < y ? x : y;
+println("  " + x + " 和 " + y + " 的最小值: " + min);
+
+// ==================== 测试 3: 嵌套三元运算符 ====================
+println("\n【测试 3】嵌套三元运算符");
+
+val score = 85;
+val grade = score >= 90 ? "优秀" : (score >= 60 ? "及格" : "不及格");
+println("  分数 " + score + ": " + grade);
+
+val score2 = 95;
+val grade2 = score2 >= 90 ? "优秀" : (score2 >= 60 ? "及格" : "不及格");
+println("  分数 " + score2 + ": " + grade2);
+
+val score3 = 45;
+val grade3 = score3 >= 90 ? "优秀" : (score3 >= 60 ? "及格" : "不及格");
+println("  分数 " + score3 + ": " + grade3);
+
+// ==================== 测试 4: 字符串条件 ====================
+println("\n【测试 4】字符串条件");
+
+val name = "Loong";
+val greeting = name == "Loong" ? "欢迎龙语言" : "欢迎";
+println("  " + greeting + ", " + name);
+
+// ==================== 测试 5: 布尔值条件 ====================
+println("\n【测试 5】布尔值条件");
+
+val isLoggedIn = true;
+val message = isLoggedIn ? "欢迎回来" : "请登录";
+println("  登录状态: " + message);
+
+val isLoggedIn2 = false;
+val message2 = isLoggedIn2 ? "欢迎回来" : "请登录";
+println("  登录状态: " + message2);
+
+// ==================== 测试 6: 与函数调用结合 ====================
+println("\n【测试 6】与函数调用结合");
+
+val isEven = fn(n) {
+    return n % 2 == 0 ? "偶数" : "奇数";
+};
+
+println("  5 是 " + isEven(5));
+println("  8 是 " + isEven(8));
+
+// ==================== 测试 7: 在表达式中使用 ====================
+println("\n【测试 7】在表达式中使用");
+
+val a = 15;
+val b = 25;
+val result = (a + b) > 30 ? "大于30" : "小于等于30";
+println("  " + a + " + " + b + " " + result);
+
+// ==================== 测试 8: 与逻辑运算符结合 ====================
+println("\n【测试 8】与逻辑运算符结合");
+
+val num = 15;
+val range = (num > 10 && num < 20) ? "在10-20之间" : "不在10-20之间";
+println("  " + num + " " + range);
+
+val num2 = 25;
+val range2 = (num2 > 10 && num2 < 20) ? "在10-20之间" : "不在10-20之间";
+println("  " + num2 + " " + range2);
+
+// ==================== 测试 9: 多层嵌套 ====================
+println("\n【测试 9】多层嵌套");
+
+val temperature = 25;
+val weather = temperature > 30 ? "炎热" : (temperature > 20 ? "温暖" : (temperature > 10 ? "凉爽" : "寒冷"));
+println("  温度 " + temperature + "°C: " + weather);
+
+val temperature2 = 35;
+val weather2 = temperature2 > 30 ? "炎热" : (temperature2 > 20 ? "温暖" : (temperature2 > 10 ? "凉爽" : "寒冷"));
+println("  温度 " + temperature2 + "°C: " + weather2);
+
+val temperature3 = 5;
+val weather3 = temperature3 > 30 ? "炎热" : (temperature3 > 20 ? "温暖" : (temperature3 > 10 ? "凉爽" : "寒冷"));
+println("  温度 " + temperature3 + "°C: " + weather3);
+
+// ==================== 测试 10: 与列表结合 ====================
+println("\n【测试 10】与列表结合");
+
+val list = [1, 2, 3];
+val listStatus = len(list) > 0 ? "列表非空" : "列表为空";
+println("  " + listStatus);
+
+val emptyList = [];
+val emptyStatus = len(emptyList) > 0 ? "列表非空" : "列表为空";
+println("  " + emptyStatus);
+
+// ==================== 测试 11: 优先级测试 ====================
+println("\n【测试 11】优先级测试");
+
+val val1 = 5;
+val val2 = 10;
+val val3 = 15;
+
+// 三元运算符优先级低于逻辑运算符
+val test1 = val1 < val2 && val2 < val3 ? "正确" : "错误";
+println("  " + val1 + " < " + val2 + " && " + val2 + " < " + val3 + ": " + test1);
+
+// 三元运算符优先级高于赋值
+val test2 = val1 > val2 ? val1 : val2;
+println("  " + val1 + " > " + val2 + " ? " + val1 + " : " + val2 + " = " + test2);
+
+// ==================== 测试 12: 边界情况 ====================
+println("\n【测试 12】边界情况");
+
+val zero = 0;
+val zeroResult = zero ? "真" : "假";
+println("  0 的布尔值: " + zeroResult);
+
+val emptyStr = "";
+val emptyStrResult = emptyStr ? "真" : "假";
+println("  空字符串的布尔值: " + emptyStrResult);
+
+val nilVal = nil;
+val nilResult = nilVal ? "真" : "假";
+println("  nil 的布尔值: " + nilResult);
+
+println("\n=== 测试完成 ===");

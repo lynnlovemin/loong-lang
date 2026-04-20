@@ -1,4 +1,4 @@
-# Loong 编程语言 v1.3.1
+# Loong 编程语言 v1.3.2
 
 ## 简介
 
@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](loong-1.3.1-setup.exe)** (v1.3.1)
+📥 **[下载 Windows 安装包](loong-1.3.2-setup.exe)** (v1.3.2)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
@@ -43,6 +43,11 @@
 | `~` | 位取反 | `~0` → `-1` |
 | `<<` | 左移 | `1 << 4` → `16` |
 | `>>` | 右移 | `16 >> 2` → `4` |
+
+**三元运算符**
+| 运算符 | 说明 | 示例 |
+|--------|------|------|
+| `? :` | 条件表达式 | `cond ? trueVal : falseVal` |
 
 ## 编译
 
@@ -137,7 +142,7 @@ fn greet(name = "World") {
 
 ### 匿名函数和 Lambda 表达式
 
-Loong v1.3.1 新增匿名函数和 Lambda 表达式支持
+Loong v1.3.2 新增匿名函数和 Lambda 表达式支持
 
 **匿名函数** - 使用 `fn` 关键字定义
 ```loong
@@ -321,6 +326,43 @@ switch fruit {
         println("Unknown fruit");
 }
 ```
+
+### 三元运算符
+新增三元运算符语法支持，提供简洁的条件表达式。
+
+**基本语法**
+```loong
+val result = condition ? trueValue : falseValue;
+```
+
+**示例**
+```loong
+// 基本用法
+val age = 20;
+val status = age >= 18 ? "成年" : "未成年";
+println(status);  // 输出: 成年
+
+// 嵌套使用
+val score = 85;
+val grade = score >= 90 ? "优秀" : (score >= 60 ? "及格" : "不及格");
+println(grade);  // 输出: 良好
+
+// 在表达式中使用
+val x = 10;
+val y = 20;
+val max = x > y ? x : y;
+println("最大值: " + max);  // 输出: 最大值: 20
+
+// 与函数调用结合
+val isLoggedIn = true;
+println(isLoggedIn ? "欢迎回来" : "请登录");
+```
+
+**特性**
+- 短路求值：只计算被选择的分支
+- 支持任意表达式作为条件和结果
+- 支持嵌套使用
+- 优先级低于逻辑运算符，高于赋值运算符
 
 ### 循环
 ```loong

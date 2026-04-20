@@ -1,6 +1,6 @@
-// Loong 编程语言 v1.3.1 - Switch/Case 语法完整测试
+// Switch/Case 语法完整测试
 
-println("=== Loong v1.3.1 Switch/Case 语法测试 ===\n");
+println("=== Switch/Case 语法测试 ===\n");
 
 // ==================== 测试 1: 数字类型 ====================
 println("【测试 1】数字类型 switch/case");

@@ -242,6 +242,9 @@ LoongValue Interpreter::evaluate(ExprPtr expr) {
     if (auto e = dynamic_cast<LambdaExpr*>(expr.get())) {
         return visitLambdaExpr(e);
     }
+    if (auto e = dynamic_cast<TernaryExpr*>(expr.get())) {
+        return visitTernaryExpr(e);
+    }
 
     return LoongValue::nil();
 }
@@ -1427,6 +1430,16 @@ LoongValue Interpreter::visitLambdaExpr(LambdaExpr* expr) {
     }
     
     return LoongValue::userFunction(func);
+}
+
+LoongValue Interpreter::visitTernaryExpr(TernaryExpr* expr) {
+    LoongValue conditionValue = evaluate(expr->condition);
+    
+    if (conditionValue.isTruthy()) {
+        return evaluate(expr->thenExpr);
+    } else {
+        return evaluate(expr->elseExpr);
+    }
 }
 
 // 获取父目录

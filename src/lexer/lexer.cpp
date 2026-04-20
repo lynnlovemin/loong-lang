@@ -366,6 +366,7 @@ void Lexer::scanToken() {
         case '.': addToken(TokenType::DOT); break;
         case ';': addToken(TokenType::SEMICOLON); break;
         case ':': addToken(TokenType::COLON); break;
+        case '?': addToken(TokenType::QUESTION); break;
         
         // 运算符
         case '+': addToken(TokenType::PLUS); break;
