@@ -1,0 +1,201 @@
+// ============================================
+// 并发原语完整测试
+// 测试 spawn、channel、mutex 功能
+// ============================================
+
+// === 测试 1: channel 基础 ===
+println("=== 测试 1: channel 基础 ===");
+
+val ch = channel(3);
+
+ch.send("消息1");
+ch.send("消息2");
+ch.send("消息3");
+
+val r1 = ch.recv();
+val r2 = ch.recv();
+val r3 = ch.recv();
+
+println("接收: ", r1);
+println("接收: ", r2);
+println("接收: ", r3);
+
+// === 测试 2: mutex 基础 ===
+println("\n=== 测试 2: mutex 基础 ===");
+
+val m = mutex();
+m.lock();
+println("mutex已锁定");
+m.unlock();
+println("mutex已解锁");
+
+// === 测试 3: spawn 并发任务 ===
+println("\n=== 测试 3: spawn 并发任务 ===");
+
+val doneCh = channel(3);
+
+spawn fn() {
+    println("任务1 执行中");
+    doneCh.send("任务1完成");
+};
+
+spawn fn() {
+    println("任务2 执行中");
+    doneCh.send("任务2完成");
+};
+
+spawn fn() {
+    println("任务3 执行中");
+    doneCh.send("任务3完成");
+};
+
+// 等待所有任务完成
+val t1 = doneCh.recv();
+val t2 = doneCh.recv();
+val t3 = doneCh.recv();
+
+println("收到: ", t1);
+println("收到: ", t2);
+println("收到: ", t3);
+
+// === 测试 4: channel 并发通信 ===
+println("\n=== 测试 4: channel 并发通信 ===");
+
+val computeCh = channel(1);
+val resultCh = channel(1);
+
+// 生产者任务
+spawn fn() {
+    val data = computeCh.recv();
+    val result = data * 2;
+    resultCh.send(result);
+};
+
+// 发送数据给生产者
+computeCh.send(21);
+
+// 接收结果
+val computed = resultCh.recv();
+println("计算结果: ", computed, " (期望: 42)");
+
+// === 测试 5: mutex 保护共享资源 ===
+println("\n=== 测试 5: mutex 保护共享资源 ===");
+
+val counter = 0;
+val counterMutex = mutex();
+val counterCh = channel(5);
+
+// 创建5个并发任务，每个任务增加计数器100次
+spawn fn() {
+    for val i = 0; i < 100; i = i + 1 {
+        counterMutex.lock();
+        counter = counter + 1;
+        counterMutex.unlock();
+    }
+    counterCh.send("任务A完成");
+};
+
+spawn fn() {
+    for val i = 0; i < 100; i = i + 1 {
+        counterMutex.lock();
+        counter = counter + 1;
+        counterMutex.unlock();
+    }
+    counterCh.send("任务B完成");
+};
+
+spawn fn() {
+    for val i = 0; i < 100; i = i + 1 {
+        counterMutex.lock();
+        counter = counter + 1;
+        counterMutex.unlock();
+    }
+    counterCh.send("任务C完成");
+};
+
+spawn fn() {
+    for val i = 0; i < 100; i = i + 1 {
+        counterMutex.lock();
+        counter = counter + 1;
+        counterMutex.unlock();
+    }
+    counterCh.send("任务D完成");
+};
+
+spawn fn() {
+    for val i = 0; i < 100; i = i + 1 {
+        counterMutex.lock();
+        counter = counter + 1;
+        counterMutex.unlock();
+    }
+    counterCh.send("任务E完成");
+};
+
+// 等待所有任务完成
+val c1 = counterCh.recv();
+val c2 = counterCh.recv();
+val c3 = counterCh.recv();
+val c4 = counterCh.recv();
+val c5 = counterCh.recv();
+
+println("收到: ", c1);
+println("收到: ", c2);
+println("收到: ", c3);
+println("收到: ", c4);
+println("收到: ", c5);
+
+println("计数器值: ", counter, " (期望: 500)");
+
+// === 测试 6: lock 块 RAII 风格 ===
+println("\n=== 测试 6: lock 块 RAII 风格 ===");
+
+val lockCounter = 0;
+val lockM = mutex();
+val lockCh = channel(3);
+
+spawn fn() {
+    for val i = 0; i < 50; i = i + 1 {
+        lock lockM {
+            lockCounter = lockCounter + 1;
+        }
+    }
+    lockCh.send("锁任务1完成");
+};
+
+spawn fn() {
+    for val i = 0; i < 50; i = i + 1 {
+        lock lockM {
+            lockCounter = lockCounter + 1;
+        }
+    }
+    lockCh.send("锁任务2完成");
+};
+
+spawn fn() {
+    for val i = 0; i < 50; i = i + 1 {
+        lock lockM {
+            lockCounter = lockCounter + 1;
+        }
+    }
+    lockCh.send("锁任务3完成");
+};
+
+lockCh.recv();
+lockCh.recv();
+lockCh.recv();
+
+println("lock块计数器: ", lockCounter, " (期望: 150)");
+
+// === 测试 7: channel 类型检查 ===
+println("\n=== 测试 7: channel 类型检查 ===");
+
+val testCh = channel(5);
+println("channel类型: ", type(testCh));
+
+// === 测试 8: mutex 类型检查 ===
+println("\n=== 测试 8: mutex 类型检查 ===");
+
+val testM = mutex();
+println("mutex类型: ", type(testM));
+
+println("\n=== 所有测试完成 ===");

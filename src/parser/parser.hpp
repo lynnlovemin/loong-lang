@@ -44,6 +44,8 @@ private:
     StmtPtr parseThrowStmt();
     StmtPtr parseClassStmt();
     StmtPtr parseSwitchStmt();
+    StmtPtr parseSpawnStmt();
+    StmtPtr parseLockStmt();
     
     // 表达式解析
     ExprPtr parseExpression();
@@ -71,6 +73,9 @@ private:
                            const std::vector<std::pair<std::string, ExprPtr>>& defaultParams,
                            int line, int column);
     std::pair<std::vector<std::string>, std::vector<std::pair<std::string, ExprPtr>>> parseLambdaParams();
+    
+    // 后续成员访问解析
+    ExprPtr parseCallOnExpr(ExprPtr expr);
     
     // 辅助解析
     std::vector<StmtPtr> parseBlock();

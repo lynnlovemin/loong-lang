@@ -50,6 +50,15 @@ enum class TokenType {
     CASE,           // case
     DEFAULT,        // default
 
+    // 并发
+    SPAWN,          // spawn
+    CHANNEL,        // channel
+    MUTEX,          // mutex
+    LOCK,           // lock
+    UNLOCK,         // unlock
+    SEND,           // send
+    RECV,           // recv
+
     // 运算符号
     PLUS,           // +
     MINUS,          // -
@@ -148,6 +157,13 @@ struct Token {
             case TokenType::SWITCH: return "SWITCH";
             case TokenType::CASE: return "CASE";
             case TokenType::DEFAULT: return "DEFAULT";
+            case TokenType::SPAWN: return "SPAWN";
+            case TokenType::CHANNEL: return "CHANNEL";
+            case TokenType::MUTEX: return "MUTEX";
+            case TokenType::LOCK: return "LOCK";
+            case TokenType::UNLOCK: return "UNLOCK";
+            case TokenType::SEND: return "SEND";
+            case TokenType::RECV: return "RECV";
             case TokenType::PLUS: return "PLUS";
             case TokenType::MINUS: return "MINUS";
             case TokenType::STAR: return "STAR";

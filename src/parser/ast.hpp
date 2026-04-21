@@ -640,6 +640,96 @@ public:
     }
 };
 
+// ==================== 并发相关AST节点 ====================
+
+// Spawn语句 - 启动并发任务
+class SpawnStmt : public Stmt {
+public:
+    ExprPtr expression;    // 要执行的表达式（通常是函数调用或lambda）
+    
+    static StmtPtr create(ExprPtr expr, int line = 1, int column = 1) {
+        auto stmt = std::make_shared<SpawnStmt>();
+        stmt->expression = expr;
+        stmt->line = line;
+        stmt->column = column;
+        return stmt;
+    }
+};
+
+// 通道发送表达式 - ch.send(value)
+class ChannelSendExpr : public Expr {
+public:
+    ExprPtr channel;       // 通道表达式
+    ExprPtr value;         // 要发送的值
+    
+    static ExprPtr create(ExprPtr channel, ExprPtr value, int line = 1, int column = 1) {
+        auto expr = std::make_shared<ChannelSendExpr>();
+        expr->channel = channel;
+        expr->value = value;
+        expr->line = line;
+        expr->column = column;
+        return expr;
+    }
+};
+
+// 通道接收表达式 - ch.recv()
+class ChannelRecvExpr : public Expr {
+public:
+    ExprPtr channel;       // 通道表达式
+    
+    static ExprPtr create(ExprPtr channel, int line = 1, int column = 1) {
+        auto expr = std::make_shared<ChannelRecvExpr>();
+        expr->channel = channel;
+        expr->line = line;
+        expr->column = column;
+        return expr;
+    }
+};
+
+// Mutex锁定表达式 - mutex.lock()
+class MutexLockExpr : public Expr {
+public:
+    ExprPtr mutex;         // mutex表达式
+    
+    static ExprPtr create(ExprPtr mutex, int line = 1, int column = 1) {
+        auto expr = std::make_shared<MutexLockExpr>();
+        expr->mutex = mutex;
+        expr->line = line;
+        expr->column = column;
+        return expr;
+    }
+};
+
+// Mutex解锁表达式 - mutex.unlock()
+class MutexUnlockExpr : public Expr {
+public:
+    ExprPtr mutex;         // mutex表达式
+    
+    static ExprPtr create(ExprPtr mutex, int line = 1, int column = 1) {
+        auto expr = std::make_shared<MutexUnlockExpr>();
+        expr->mutex = mutex;
+        expr->line = line;
+        expr->column = column;
+        return expr;
+    }
+};
+
+// Lock块语句 - lock mutex { ... }
+class LockStmt : public Stmt {
+public:
+    ExprPtr mutex;         // mutex表达式
+    std::vector<StmtPtr> body;  // 临界区代码块
+    
+    static StmtPtr create(ExprPtr mutex, const std::vector<StmtPtr>& body, int line = 1, int column = 1) {
+        auto stmt = std::make_shared<LockStmt>();
+        stmt->mutex = mutex;
+        stmt->body = body;
+        stmt->line = line;
+        stmt->column = column;
+        return stmt;
+    }
+};
+
 // 程序根节点
 class Program {
 public:

@@ -38,7 +38,14 @@ const std::unordered_map<std::string, TokenType> keywords = {
     {"super", TokenType::SUPER},
     {"switch", TokenType::SWITCH},
     {"case", TokenType::CASE},
-    {"default", TokenType::DEFAULT}
+    {"default", TokenType::DEFAULT},
+    {"spawn", TokenType::SPAWN},
+    {"channel", TokenType::CHANNEL},
+    {"mutex", TokenType::MUTEX},
+    {"lock", TokenType::LOCK},
+    {"unlock", TokenType::UNLOCK},
+    {"send", TokenType::SEND},
+    {"recv", TokenType::RECV}
 };
 
 Lexer::Lexer(const std::string& source)

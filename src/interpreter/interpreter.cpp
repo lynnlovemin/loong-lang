@@ -282,6 +282,18 @@ LoongValue Interpreter::evaluate(ExprPtr expr) {
     if (auto e = dynamic_cast<TernaryExpr*>(expr.get())) {
         return visitTernaryExpr(e);
     }
+    if (auto e = dynamic_cast<ChannelSendExpr*>(expr.get())) {
+        return visitChannelSendExpr(e);
+    }
+    if (auto e = dynamic_cast<ChannelRecvExpr*>(expr.get())) {
+        return visitChannelRecvExpr(e);
+    }
+    if (auto e = dynamic_cast<MutexLockExpr*>(expr.get())) {
+        return visitMutexLockExpr(e);
+    }
+    if (auto e = dynamic_cast<MutexUnlockExpr*>(expr.get())) {
+        return visitMutexUnlockExpr(e);
+    }
 
     return LoongValue::nil();
 }
@@ -1122,6 +1134,10 @@ void Interpreter::execute(StmtPtr stmt) {
         visitClassStmt(s);
     } else if (auto s = dynamic_cast<SwitchStmt*>(stmt.get())) {
         visitSwitchStmt(s);
+    } else if (auto s = dynamic_cast<SpawnStmt*>(stmt.get())) {
+        visitSpawnStmt(s);
+    } else if (auto s = dynamic_cast<LockStmt*>(stmt.get())) {
+        visitLockStmt(s);
     }
 }
 
@@ -1454,6 +1470,123 @@ void Interpreter::visitSwitchStmt(SwitchStmt* stmt) {
     }
 }
 
+void Interpreter::visitSpawnStmt(SpawnStmt* stmt) {
+    auto env = environment_;
+    auto expr = stmt->expression;
+    auto globals = globals_;
+    auto currentDir = currentDirectory_;
+    auto sourceFile = currentSourceFile_;
+    auto execPath = executablePath_;
+    
+    std::thread t([env, expr, globals, currentDir, sourceFile, execPath]() {
+        try {
+            Interpreter threadInterpreter;
+            threadInterpreter.environment_ = env;
+            threadInterpreter.globals_ = globals;
+            threadInterpreter.setCurrentDirectory(currentDir);
+            threadInterpreter.setSourceFile(sourceFile);
+            threadInterpreter.setExecutablePath(execPath);
+            
+            // Evaluate the expression (could be a lambda or function call)
+            LoongValue result = threadInterpreter.evaluate(expr);
+            
+            // If it's a function value, call it
+            if (result.isUserFunction()) {
+                auto func = result.userFunc;
+                auto previousEnv = threadInterpreter.environment_;
+                auto newEnv = func->closure->createChild();
+                threadInterpreter.environment_ = newEnv;
+                
+                // Bind parameters (no arguments for spawn)
+                for (size_t i = 0; i < func->params.size(); i++) {
+                    threadInterpreter.environment_->define(func->params[i], LoongValue::nil());
+                }
+                
+                // Bind default parameters
+                for (size_t i = 0; i < func->defaultParams.size(); i++) {
+                    threadInterpreter.environment_->define(
+                        func->defaultParams[i].name, 
+                        threadInterpreter.evaluate(func->defaultParams[i].defaultValue)
+                    );
+                }
+                
+                // Execute function body
+                try {
+                    for (const auto& stmt : func->body) {
+                        threadInterpreter.execute(stmt);
+                    }
+                } catch (const ReturnException&) {
+                    // Function returned, ignore
+                }
+                
+                threadInterpreter.environment_ = previousEnv;
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "Spawn任务异常: " << e.what() << std::endl;
+        }
+    });
+    
+    std::lock_guard<std::mutex> lock(threadsMutex_);
+    threads_.push_back(std::move(t));
+}
+
+void Interpreter::visitLockStmt(LockStmt* stmt) {
+    LoongValue mutexVal = evaluate(stmt->mutex);
+    if (!mutexVal.isMutex()) {
+        throw std::runtime_error("lock语句需要一个mutex对象");
+    }
+    
+    auto mutex = mutexVal.mutexValue;
+    mutex->lock();
+    try {
+        executeBlock(stmt->body, environment_->createChild());
+    } catch (...) {
+        mutex->unlock();
+        throw;
+    }
+    mutex->unlock();
+}
+
+LoongValue Interpreter::visitChannelSendExpr(ChannelSendExpr* expr) {
+    LoongValue channelVal = evaluate(expr->channel);
+    if (!channelVal.isChannel()) {
+        throw std::runtime_error("send方法需要一个channel对象");
+    }
+    
+    LoongValue value = evaluate(expr->value);
+    channelVal.channelValue->send(value);
+    return LoongValue::nil();
+}
+
+LoongValue Interpreter::visitChannelRecvExpr(ChannelRecvExpr* expr) {
+    LoongValue channelVal = evaluate(expr->channel);
+    if (!channelVal.isChannel()) {
+        throw std::runtime_error("recv方法需要一个channel对象");
+    }
+    
+    return channelVal.channelValue->recv();
+}
+
+LoongValue Interpreter::visitMutexLockExpr(MutexLockExpr* expr) {
+    LoongValue mutexVal = evaluate(expr->mutex);
+    if (!mutexVal.isMutex()) {
+        throw std::runtime_error("lock方法需要一个mutex对象");
+    }
+    
+    mutexVal.mutexValue->lock();
+    return LoongValue::nil();
+}
+
+LoongValue Interpreter::visitMutexUnlockExpr(MutexUnlockExpr* expr) {
+    LoongValue mutexVal = evaluate(expr->mutex);
+    if (!mutexVal.isMutex()) {
+        throw std::runtime_error("unlock方法需要一个mutex对象");
+    }
+    
+    mutexVal.mutexValue->unlock();
+    return LoongValue::nil();
+}
+
 LoongValue Interpreter::visitThisExpr(ThisExpr* expr) {
     if (currentInstance_.isNil()) {
         throw std::runtime_error("\'this\' 只能在方法内部使用");
@@ -1759,6 +1892,13 @@ LoongValue Interpreter::loadModule(const std::string& moduleName, const std::str
 void Interpreter::interpret(const Program& program) {
     for (const auto& stmt : program.statements) {
         execute(stmt);
+    }
+    
+    // 等待所有spawn线程完成
+    for (auto& t : threads_) {
+        if (t.joinable()) {
+            t.join();
+        }
     }
 }
 
@@ -3677,6 +3817,30 @@ void Interpreter::registerBuiltinFunctions() {
             return LoongValue::string(result);
         }
     ));
+    
+    // channel内置函数 - 创建通道
+    globals_->define("channel", LoongValue::builtinFunction([](const std::vector<LoongValue>& args) {
+        if (args.size() != 1) {
+            throw std::runtime_error("channel函数需要一个参数: channel(capacity)");
+        }
+        if (!args[0].isNumber()) {
+            throw std::runtime_error("channel容量必须是数字");
+        }
+        
+        int capacity = static_cast<int>(args[0].numberValue);
+        auto channel = std::make_shared<ChannelValue>(capacity);
+        return LoongValue::channel(channel);
+    }));
+    
+    // mutex内置函数 - 创建互斥锁
+    globals_->define("mutex", LoongValue::builtinFunction([](const std::vector<LoongValue>& args) {
+        if (!args.empty()) {
+            throw std::runtime_error("mutex函数不需要参数");
+        }
+        
+        auto mutex = std::make_shared<MutexValue>();
+        return LoongValue::mutex(mutex);
+    }));
 }
 
 } // namespace loong

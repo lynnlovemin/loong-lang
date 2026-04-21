@@ -8,6 +8,8 @@
 #include <vector>
 #include <unordered_map>
 #include <set>
+#include <thread>
+#include <mutex>
 
 namespace loong {
 
@@ -42,6 +44,10 @@ private:
     std::string executablePath_;     // loong.exe所在目录
     std::vector<std::string> importStack_;  // 导入栈，用于追踪导入链
     
+    // 并发执行相关
+    std::vector<std::thread> threads_;
+    std::mutex threadsMutex_;
+    
     // 当前实例（用于this关键字）
     LoongValue currentInstance_;
     // 当前类（用于super关键字）
@@ -73,6 +79,13 @@ private:
     LoongValue visitSuperExpr(SuperExpr* expr);
     LoongValue visitLambdaExpr(class LambdaExpr* expr);
     LoongValue visitTernaryExpr(class TernaryExpr* expr);
+    
+    void visitSpawnStmt(SpawnStmt* stmt);
+    void visitLockStmt(LockStmt* stmt);
+    LoongValue visitChannelSendExpr(ChannelSendExpr* expr);
+    LoongValue visitChannelRecvExpr(ChannelRecvExpr* expr);
+    LoongValue visitMutexLockExpr(MutexLockExpr* expr);
+    LoongValue visitMutexUnlockExpr(MutexUnlockExpr* expr);
     
     // 具体语句执行
     void visitExprStmt(ExprStmt* stmt);

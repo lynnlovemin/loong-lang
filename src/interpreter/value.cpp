@@ -117,6 +117,10 @@ std::string LoongValue::toString() const {
             return "<instance of " + instanceValue->klass->name + ">";
         case ValueType::BOUND_METHOD:
             return "<method " + boundMethodValue->method->name + ">";
+        case ValueType::CHANNEL:
+            return "<channel>";
+        case ValueType::MUTEX:
+            return "<mutex>";
         default:
             return "<unknown>";
     }

@@ -110,6 +110,12 @@ StmtPtr Parser::parseStatement() {
     if (match(TokenType::SWITCH)) {
         return parseSwitchStmt();
     }
+    if (match(TokenType::SPAWN)) {
+        return parseSpawnStmt();
+    }
+    if (match(TokenType::LOCK)) {
+        return parseLockStmt();
+    }
     
     // 表达式语句
     ExprPtr expr = parseExpression();
@@ -521,24 +527,55 @@ ExprPtr Parser::parseUnary() {
 
 ExprPtr Parser::parseCall() {
     ExprPtr expr = parsePrimary();
+    return parseCallOnExpr(expr);
+}
+
+ExprPtr Parser::parseCallOnExpr(ExprPtr expr) {
+    ExprPtr result = expr;
     
     while (true) {
         if (match(TokenType::LPAREN)) {
             std::vector<ExprPtr> args = parseArguments();
-            expr = CallExpr::create(expr, args, previous().line, previous().column);
+            result = CallExpr::create(result, args, previous().line, previous().column);
         } else if (match(TokenType::LBRACKET)) {
             ExprPtr index = parseExpression();
             consume(TokenType::RBRACKET, "期望 ']'");
-            expr = IndexExpr::create(expr, index, previous().line, previous().column);
+            result = IndexExpr::create(result, index, previous().line, previous().column);
         } else if (match(TokenType::DOT)) {
-            Token member = consume(TokenType::IDENTIFIER, "期望成员名");
-            expr = MemberExpr::create(expr, member.value, member.line, member.column);
+            // 检查是否是标识符或并发关键字（send/recv/lock/unlock）
+            Token member;
+            if (check(TokenType::IDENTIFIER) || check(TokenType::SEND) || 
+                check(TokenType::RECV) || check(TokenType::LOCK) || check(TokenType::UNLOCK)) {
+                member = consume(peek().type, "期望成员名");
+            } else {
+                member = consume(TokenType::IDENTIFIER, "期望成员名");
+            }
+            
+            // 检查是否是通道的send/recv方法调用
+            if (member.value == "send" && match(TokenType::LPAREN)) {
+                std::vector<ExprPtr> args = parseArguments();
+                if (args.size() != 1) {
+                    error(previous(), "send方法需要一个参数");
+                }
+                result = ChannelSendExpr::create(result, args[0], member.line, member.column);
+            } else if (member.value == "recv" && match(TokenType::LPAREN)) {
+                consume(TokenType::RPAREN, "期望 ')'");
+                result = ChannelRecvExpr::create(result, member.line, member.column);
+            } else if (member.value == "lock" && match(TokenType::LPAREN)) {
+                consume(TokenType::RPAREN, "期望 ')'");
+                result = MutexLockExpr::create(result, member.line, member.column);
+            } else if (member.value == "unlock" && match(TokenType::LPAREN)) {
+                consume(TokenType::RPAREN, "期望 ')'");
+                result = MutexUnlockExpr::create(result, member.line, member.column);
+            } else {
+                result = MemberExpr::create(result, member.value, member.line, member.column);
+            }
         } else {
             break;
         }
     }
     
-    return expr;
+    return result;
 }
 
 ExprPtr Parser::parsePrimary() {
@@ -579,6 +616,35 @@ ExprPtr Parser::parsePrimary() {
             return parseLambdaBody(params, defaultParams, ident.line, ident.column);
         }
         return IdentifierExpr::create(previous().value, previous().line, previous().column);
+    }
+
+    // channel关键字 - 作为函数调用处理
+    if (match(TokenType::CHANNEL)) {
+        Token chToken = previous();
+        consume(TokenType::LPAREN, "期望 '(' 开始channel调用");
+        ExprPtr capacity = parseExpression();
+        consume(TokenType::RPAREN, "期望 ')' 结束channel调用");
+        ExprPtr call = CallExpr::create(
+            IdentifierExpr::create("channel", chToken.line, chToken.column),
+            std::vector<ExprPtr>{capacity},
+            chToken.line, chToken.column
+        );
+        // 解析后续的成员访问
+        return parseCallOnExpr(call);
+    }
+
+    // mutex关键字 - 作为函数调用处理
+    if (match(TokenType::MUTEX)) {
+        Token mToken = previous();
+        consume(TokenType::LPAREN, "期望 '(' 开始mutex调用");
+        consume(TokenType::RPAREN, "期望 ')' 结束mutex调用");
+        ExprPtr call = CallExpr::create(
+            IdentifierExpr::create("mutex", mToken.line, mToken.column),
+            std::vector<ExprPtr>{},
+            mToken.line, mToken.column
+        );
+        // 解析后续的成员访问
+        return parseCallOnExpr(call);
     }
 
     // this关键字
@@ -991,6 +1057,23 @@ StmtPtr Parser::parseSwitchStmt() {
     consume(TokenType::RBRACE, "期望 '}' 结束switch块");
     
     return SwitchStmt::create(expression, cases, switchToken.line, switchToken.column);
+}
+
+// ==================== 并发语句解析 ====================
+
+StmtPtr Parser::parseSpawnStmt() {
+    Token spawnToken = previous();
+    ExprPtr expr = parseExpression();
+    match(TokenType::SEMICOLON);
+    return SpawnStmt::create(expr, spawnToken.line, spawnToken.column);
+}
+
+StmtPtr Parser::parseLockStmt() {
+    Token lockToken = previous();
+    ExprPtr mutexExpr = parseExpression();
+    consume(TokenType::LBRACE, "期望 '{' 开始lock块");
+    std::vector<StmtPtr> body = parseBlock();
+    return LockStmt::create(mutexExpr, body, lockToken.line, lockToken.column);
 }
 
 } // namespace loong

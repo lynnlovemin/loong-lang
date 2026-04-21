@@ -9,6 +9,9 @@
 #include <functional>
 #include <sstream>
 #include <iomanip>
+#include <queue>
+#include <mutex>
+#include <condition_variable>
 
 namespace loong {
 
@@ -18,6 +21,8 @@ class Stmt;
 class LoongClass;
 struct LoongInstance;
 struct BoundMethod;
+class ChannelValue;
+class MutexValue;
 
 // 表达式指针类型（前向声明兼容）
 using ExprPtr = std::shared_ptr<class Expr>;
@@ -58,7 +63,9 @@ enum class ValueType {
     BUILTIN_FUNCTION,
     CLASS,
     INSTANCE,
-    BOUND_METHOD
+    BOUND_METHOD,
+    CHANNEL,
+    MUTEX
 };
 
 // LoongValue 类型定义
@@ -78,6 +85,8 @@ struct LoongValue {
     std::shared_ptr<LoongClass> classValue;
     std::shared_ptr<LoongInstance> instanceValue;
     std::shared_ptr<BoundMethod> boundMethodValue;  // 改名避免与函数冲突
+    std::shared_ptr<ChannelValue> channelValue;
+    std::shared_ptr<MutexValue> mutexValue;
     
     // 构造函数
     LoongValue() : type(ValueType::NIL), boolValue(false), numberValue(0), bigintValue(0), charValue('\0') {}
@@ -187,6 +196,20 @@ struct LoongValue {
         return v;
     }
     
+    static LoongValue channel(std::shared_ptr<ChannelValue> ch) {
+        LoongValue v;
+        v.type = ValueType::CHANNEL;
+        v.channelValue = ch;
+        return v;
+    }
+    
+    static LoongValue mutex(std::shared_ptr<MutexValue> m) {
+        LoongValue v;
+        v.type = ValueType::MUTEX;
+        v.mutexValue = m;
+        return v;
+    }
+    
     // 类型判断
     bool isNil() const { return type == ValueType::NIL; }
     bool isBool() const { return type == ValueType::BOOL; }
@@ -204,6 +227,8 @@ struct LoongValue {
     bool isClass() const { return type == ValueType::CLASS; }
     bool isInstance() const { return type == ValueType::INSTANCE; }
     bool isBoundMethod() const { return type == ValueType::BOUND_METHOD; }
+    bool isChannel() const { return type == ValueType::CHANNEL; }
+    bool isMutex() const { return type == ValueType::MUTEX; }
     
     // 真值判断
     bool isTruthy() const {
@@ -221,6 +246,8 @@ struct LoongValue {
             case ValueType::CLASS:
             case ValueType::INSTANCE:
             case ValueType::BOUND_METHOD:
+            case ValueType::CHANNEL:
+            case ValueType::MUTEX:
                 return true;
             default: return false;
         }
@@ -246,6 +273,10 @@ struct LoongValue {
                 return "instance";
             case ValueType::BOUND_METHOD:
                 return "method";
+            case ValueType::CHANNEL:
+                return "channel";
+            case ValueType::MUTEX:
+                return "mutex";
             default: return "unknown";
         }
     }
@@ -286,6 +317,52 @@ struct LoongInstance {
 struct BoundMethod {
     LoongValue instance;
     std::shared_ptr<UserFunction> method;
+};
+
+// 线程安全通道类（定义在LoongValue之后）
+class ChannelValue {
+public:
+    int capacity;
+    std::queue<LoongValue> buffer;
+    std::mutex mtx;
+    std::condition_variable notFull;
+    std::condition_variable notEmpty;
+    
+    ChannelValue(int cap) : capacity(cap) {}
+    
+    void send(const LoongValue& value) {
+        std::unique_lock<std::mutex> lock(mtx);
+        if (capacity > 0) {
+            notFull.wait(lock, [this]() { return static_cast<int>(buffer.size()) < capacity; });
+        }
+        buffer.push(value);
+        notEmpty.notify_one();
+    }
+    
+    LoongValue recv() {
+        std::unique_lock<std::mutex> lock(mtx);
+        notEmpty.wait(lock, [this]() { return !buffer.empty(); });
+        LoongValue value = buffer.front();
+        buffer.pop();
+        if (capacity > 0) {
+            notFull.notify_one();
+        }
+        return value;
+    }
+};
+
+// 互斥锁类（定义在LoongValue之后）
+class MutexValue {
+public:
+    std::mutex mtx;
+    
+    void lock() {
+        mtx.lock();
+    }
+    
+    void unlock() {
+        mtx.unlock();
+    }
 };
 
 // 运算符重载

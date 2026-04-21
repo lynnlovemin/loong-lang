@@ -1,4 +1,4 @@
-# Loong 编程语言 v1.3.4
+# Loong 编程语言 v2.0.0
 
 ## 简介
 
@@ -6,7 +6,7 @@
 
 ## 下载安装
 
-📥 **[下载 Windows 安装包](loong-1.3.4-setup.exe)** (v1.3.4)
+📥 **[下载 Windows 安装包](loong-2.0.0-setup.exe)** (v2.0.0)
 
 安装包功能：
 - 自动安装 loong.exe 到指定目录
@@ -430,6 +430,65 @@ println(isLoggedIn ? "欢迎回来" : "请登录");
 - 支持任意表达式作为条件和结果
 - 支持嵌套使用
 - 优先级低于逻辑运算符，高于赋值运算符
+
+### 轻量级并发原语
+Loong v2.0.0 新增轻量级并发原语支持，包括 spawn、channel 和 mutex。
+
+#### spawn 关键字 - 轻量级线程
+```loong
+// 语法：spawn 表达式启动并发任务
+spawn fn handleRequest(client) {
+    val data = tcp_recv(client, 1024);
+    tcp_send(client, "Hello!");
+    tcp_close(client);
+}
+
+// 启动多个并发任务
+for val i in range(10) {
+    spawn fn() {
+        println("任务 ", i, " 执行中");
+    };
+}
+```
+
+#### Channel - 并发通信通道
+```loong
+// 创建通道
+val ch = channel(10);  // 缓冲大小为10
+
+// 发送数据
+ch.send("hello");
+
+// 接收数据
+val msg = ch.recv();
+
+// 在并发任务间通信
+spawn fn() {
+    ch.send(computeResult());
+};
+val result = ch.recv();  // 阻塞等待
+```
+
+#### Mutex 和 Lock - 互斥锁
+```loong
+val mutex = mutex();
+
+mutex.lock();
+// 临界区
+sharedCounter = sharedCounter + 1;
+mutex.unlock();
+
+// 或使用 RAII 风格的 lock 块
+lock mutex {
+    sharedCounter = sharedCounter + 1;
+}
+```
+
+**特性**
+- spawn 创建独立的执行线程（std::thread）
+- channel 提供线程安全的消息传递，支持阻塞 send/recv
+- mutex 提供互斥锁保护，支持手动 lock/unlock 或 lock 块自动解锁
+- Environment 支持线程安全访问
 
 ### 循环
 ```loong
@@ -1073,7 +1132,6 @@ loong/
 - [x] switch/case语法
 - [x] 网络请求
 - [x] 包管理器
-- [ ] 并行处理
 - [x] 网络协议（HTTP、TCP、UDP、Socket）
 - [x] 数据库驱动（MySQL）
 - [x] ASCII码支持
@@ -1085,6 +1143,7 @@ loong/
 - [x] 列表/字典/字符串方法（push/pop/keys/values等）
 - [x] 匿名函数和 Lambda 表达式
 - [x] val 无初始化声明和类型注解
+- [x] 轻量级并发原语（spawn、channel、mutex）
 
 ## 许可证
 
